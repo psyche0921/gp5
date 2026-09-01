@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#07060a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<title>GP5 Pedalboard Controller</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">GP5</span>
+    <span class="brand-sub">PEDALBOARD CONTROLLER</span>
+  </div>
+  <div class="conn-controls">
+    <select id="transportSelect" class="transport-select">
+      <option value="bluetooth" selected>Bluetooth</option>
+      <option value="usb">USB MIDI</option>
+    </select>
+    <button id="connectBtn" class="connect-btn">
+      <span id="connLed" class="led"></span>
+      <span id="connLabel">Connect</span>
+    </button>
+    <button id="midiLogToggle" class="log-toggle" title="Bluetooth/USB로 들어오는 신호를 원본 그대로 확인">신호 로그</button>
+  </div>
+</header>
+
+<section class="patch-strip">
+  <button id="patchPrev" class="patch-nav" disabled>◀</button>
+
+  <button id="patchOpenList" class="patch-lcd" disabled>
+    <span class="lcd-num" id="patchNum">--</span>
+    <span class="lcd-name" id="patchName">GP5를 연결하세요</span>
+  </button>
+
+  <button id="patchNext" class="patch-nav" disabled>▶</button>
+
+  <button id="tunerBtn" class="tuner-btn" disabled title="Tuner (USB 모드 전용)">🎵 TUNER</button>
+
+  <div id="masterVolWrap" class="master-vol disabled">
+    <span class="mv-label">VOL</span>
+    <input id="masterVol" type="range" min="0" max="100" value="80" disabled>
+    <span id="masterVolValue" class="mv-value">80</span>
+  </div>
+</section>
+
+<main class="pedalboard" id="pedalboard"></main>
+
+<footer class="status-bar">
+  <span id="statusText" class="status-text">초기화 중...</span>
+  <span id="statusSpinner" class="spinner"></span>
+</footer>
+
+<!-- Effect drawer -->
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h2 id="drawerTitle">Block</h2>
+    <button id="drawerClose" class="drawer-close">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label class="field-label">EFFECT</label>
+      <select id="drawerEffectSelect" class="effect-select"></select>
+    </div>
+    <div class="field toggle-field">
+      <label class="switch">
+        <input type="checkbox" id="drawerToggle">
+        <span class="switch-track"></span>
+      </label>
+      <span id="drawerToggleLabel" class="switch-text">OFF</span>
+    </div>
+    <p id="drawerHint" class="drawer-hint"></p>
+    <div class="knobs-grid" id="drawerKnobs"></div>
+  </div>
+</div>
+
+<!-- Patch list modal -->
+<div class="patch-modal" id="patchListModal">
+  <div class="patch-modal-head">
+    <h2>PATCH LIST</h2>
+    <button id="patchListClose" class="drawer-close">×</button>
+  </div>
+  <div class="patch-modal-body" id="patchListBody"></div>
+</div>
+
+<!-- Raw MIDI monitor (for diagnosing pedals/controllers GP5 doesn't echo) -->
+<div class="midi-log" id="midiLog">
+  <div class="midi-log-head">
+    <h2>신호 모니터</h2>
+    <div class="midi-log-actions">
+      <button id="midiLogClear" class="log-clear-btn">CLEAR</button>
+      <button id="midiLogClose" class="drawer-close">×</button>
+    </div>
+  </div>
+  <div class="midi-log-body" id="midiLogBody">
+    <p class="midi-log-empty">연결(Bluetooth 또는 USB) 후 GP5/페달 버튼을 누르면 여기에 원본 신호가 그대로 찍힙니다. 아무것도 안 찍히면 GP5가 그 이벤트를 이 연결로 전혀 보내지 않는다는 뜻입니다.</p>
+  </div>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

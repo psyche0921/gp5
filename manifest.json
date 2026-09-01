@@ -1,0 +1,15 @@
+{
+  "name": "GP5 Pedalboard Controller",
+  "short_name": "GP5",
+  "description": "Valeton GP5 멀티이펙트 페달을 Bluetooth/USB로 직접 제어하는 페달보드 컨트롤러",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#07060a",
+  "theme_color": "#07060a",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
