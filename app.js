@@ -131,11 +131,15 @@ function bindStaticEvents() {
 // Browsers only allow requestFullscreen() from a user gesture, so a page load alone
 // can't force it — this fires on the first tap/click and keeps retrying on later taps
 // (e.g. after a Bluetooth pairing dialog drops fullscreen) so it stays out of the way.
+// Uses 'click' (not 'pointerdown') and bubble phase so it always runs AFTER a target
+// element's own click handler — otherwise this would fire first on every tap and burn
+// the transient user-activation that requestDevice()/requestMIDIAccess() need, making
+// the Connect button fail with "Must be handling a user gesture".
 function setupAutoFullscreen() {
   const el = document.documentElement;
   const requestFn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
   if (!requestFn) return;
-  document.addEventListener('pointerdown', () => {
+  document.addEventListener('click', () => {
     const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
     if (fsElement) return;
     requestFn.call(el).catch(() => {});
