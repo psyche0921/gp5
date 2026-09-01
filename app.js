@@ -124,13 +124,10 @@ function bindStaticEvents() {
   els.drawerClose.addEventListener('click', closeDrawer);
   els.scrim.addEventListener('click', () => { closeDrawer(); closePatchList(); });
   els.midiLogToggle.addEventListener('click', () => {
-    els.midiLog.classList.toggle('show');
-    els.midiLogToggle.classList.toggle('active', els.midiLog.classList.contains('show'));
+    if (els.midiLog.classList.contains('show')) closeMidiLog();
+    else openMidiLog();
   });
-  els.midiLogClose.addEventListener('click', () => {
-    els.midiLog.classList.remove('show');
-    els.midiLogToggle.classList.remove('active');
-  });
+  els.midiLogClose.addEventListener('click', closeMidiLog);
   els.midiLogClear.addEventListener('click', () => { els.midiLogBody.innerHTML = ''; });
 }
 
@@ -315,12 +312,21 @@ function findEffectData(block, bState) {
   return entry || null;
 }
 
+// The delay block's "Time (ms)" knob is a raw millisecond value (GP5 has no BPM/sync
+// concept of its own — confirmed there's no such command in ble_sysex.json) so tap
+// tempo is entirely client-side: tap interval directly becomes the delay time, and we
+// just show the equivalent BPM (60000 / ms) as a convenience readout.
+function msToBpmLabel(ms) {
+  return ms > 0 ? `${Math.round(60000 / ms)} BPM` : '-- BPM';
+}
+
 function buildKnob(block, param, index, value, enabled) {
   const wrap = document.createElement('div');
   wrap.className = 'knob-wrap';
   const range = param.max - param.min || 1;
   const frac = (v) => Math.min(1, Math.max(0, (v - param.min) / range));
   const deg = (v) => -135 + frac(v) * 270;
+  const isDelayTime = block.name === 'dly' && /^Time/i.test(param.name);
 
   wrap.innerHTML = `
     <div class="knob ${enabled ? '' : 'disabled'}" tabindex="${enabled ? 0 : -1}">
@@ -329,6 +335,11 @@ function buildKnob(block, param, index, value, enabled) {
     </div>
     <div class="knob-name">${param.name}</div>
     <div class="knob-value">${formatParamValue(value, param)}</div>
+    ${isDelayTime ? `
+      <div class="tap-tempo">
+        <button type="button" class="tap-tempo-btn" ${enabled ? '' : 'disabled'}>TAP</button>
+        <span class="tap-bpm">${msToBpmLabel(value)}</span>
+      </div>` : ''}
   `;
 
   if (!enabled) return wrap;
@@ -336,6 +347,7 @@ function buildKnob(block, param, index, value, enabled) {
   const knob = wrap.querySelector('.knob');
   const dial = wrap.querySelector('.knob-dial');
   const valueEl = wrap.querySelector('.knob-value');
+  const bpmEl = wrap.querySelector('.tap-bpm');
   let current = value;
   let dragStartY = null;
   let dragStartVal = null;
@@ -344,11 +356,30 @@ function buildKnob(block, param, index, value, enabled) {
     current = Math.min(param.max, Math.max(param.min, v));
     dial.style.transform = `rotate(${deg(current)}deg)`;
     valueEl.textContent = formatParamValue(current, param);
+    if (bpmEl) bpmEl.textContent = msToBpmLabel(current);
     if (commit) {
       clearTimeout(knob._debounce);
       knob._debounce = setTimeout(() => sendParamChange(block, index, current), 90);
     }
   };
+
+  if (isDelayTime) {
+    const tapBtn = wrap.querySelector('.tap-tempo-btn');
+    let tapTimes = [];
+    tapBtn.addEventListener('click', () => {
+      const now = performance.now();
+      // Taps more than 2s apart are a fresh tempo, not a continuation.
+      if (tapTimes.length && now - tapTimes[tapTimes.length - 1] > 2000) tapTimes = [];
+      tapTimes.push(now);
+      if (tapTimes.length > 6) tapTimes.shift();
+      tapBtn.classList.add('pulse');
+      setTimeout(() => tapBtn.classList.remove('pulse'), 120);
+      if (tapTimes.length < 2) return;
+      const intervals = tapTimes.slice(1).map((t, i) => t - tapTimes[i]);
+      const avgMs = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      apply(Math.round(avgMs), true);
+    });
+  }
 
   const onMove = (clientY) => {
     if (dragStartY === null) return;
@@ -630,7 +661,23 @@ function decodeMidiMessage(status, d1, d2) {
   return `status 0x${status.toString(16).padStart(2, '0')} [${d1}, ${d2}]`;
 }
 
+function openMidiLog() {
+  els.midiLog.classList.add('show');
+  els.midiLogToggle.classList.add('active');
+}
+
+function closeMidiLog() {
+  els.midiLog.classList.remove('show');
+  els.midiLogToggle.classList.remove('active');
+  els.midiLogBody.innerHTML = '<p class="midi-log-empty">연결(Bluetooth 또는 USB) 후 GP5/페달 버튼을 누르면 여기에 원본 신호가 그대로 찍힙니다. 아무것도 안 찍히면 GP5가 그 이벤트를 이 연결로 전혀 보내지 않는다는 뜻입니다.</p>';
+}
+
+// Only record while the panel is actually open — GP5 sends a steady stream of
+// notifications (patch polling alone is every 700ms) and there's no point burning
+// memory/DOM nodes logging traffic nobody is looking at.
 function appendMidiLogRow(portName, bytes, decoded) {
+  if (!els.midiLog.classList.contains('show')) return;
+
   const empty = els.midiLogBody.querySelector('.midi-log-empty');
   if (empty) empty.remove();
 

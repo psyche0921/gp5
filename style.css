@@ -509,6 +509,16 @@ select { font-family: inherit; }
   transform: translateX(-50%);
   border-radius: 3px;
 }
+.tap-tempo { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; }
+.tap-tempo-btn {
+  background: #0a0812; border: 2px solid #3a3550; color: var(--text-dim);
+  padding: 0.25rem 0.7rem; border-radius: 999px;
+  font-weight: 900; font-size: 0.75rem; letter-spacing: 0.05em;
+  transition: border-color 0.1s, color 0.1s, box-shadow 0.1s;
+}
+.tap-tempo-btn.pulse { border-color: var(--accent-2); color: var(--accent-2); box-shadow: 0 0 14px rgba(52,226,255,0.5); }
+.tap-bpm { font-size: 0.78rem; font-weight: 700; color: var(--text-dim); font-family: 'Consolas', monospace; }
+
 .knob-name { font-size: 0.95rem; font-weight: 800; color: var(--text); text-align: center; }
 .knob-value {
   font-family: 'Consolas', monospace; font-size: 0.95rem; font-weight: 700; color: var(--accent-2);

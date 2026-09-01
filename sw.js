@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'gp5-pedalboard-v4';
+const CACHE_NAME = 'gp5-pedalboard-v6';
 const ASSETS = [
   './',
   './index.html',
