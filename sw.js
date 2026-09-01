@@ -1,6 +1,6 @@
 'use strict';
 
-const CACHE_NAME = 'gp5-pedalboard-v2';
+const CACHE_NAME = 'gp5-pedalboard-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -12,9 +12,15 @@ const ASSETS = [
   './icons/icon.svg',
 ];
 
+// cache.addAll(urls) fetches with default cache semantics, which lets the browser's
+// own HTTP cache hand back a stale response (GitHub Pages doesn't send no-cache
+// headers) even though this is a brand-new SW version trying to snapshot the CURRENT
+// files — {cache: 'reload'} forces every install-time fetch to actually hit the network.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) => Promise.all(ASSETS.map((url) => fetch(url, { cache: 'reload' }).then((res) => cache.put(url, res)))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -34,7 +40,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
-      return fetch(event.request).then((res) => {
+      return fetch(event.request, { cache: 'reload' }).then((res) => {
         const copy = res.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return res;

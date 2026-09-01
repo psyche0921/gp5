@@ -80,6 +80,8 @@ function cacheEls() {
   els.rescanBtn = $('#rescanBtn');
   els.fullscreenBtn = $('#fullscreenBtn');
   els.toast = $('#toast');
+  els.connectOverlay = $('#connectOverlay');
+  els.connectOverlayText = $('#connectOverlayText');
   els.patchNum = $('#patchNum');
   els.patchName = $('#patchName');
   els.patchPrev = $('#patchPrev');
@@ -147,9 +149,17 @@ function bindFullscreenToggle() {
   if (!requestFn || !exitFn) { els.fullscreenBtn.style.display = 'none'; return; }
 
   els.fullscreenBtn.addEventListener('click', () => {
-    const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fsElement) exitFn.call(document).catch(() => {});
-    else requestFn.call(el).catch(() => {});
+    try {
+      const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
+      const result = fsElement ? exitFn.call(document) : requestFn.call(el);
+      // requestFullscreen()/exitFullscreen() are spec'd to return a Promise, but some
+      // browsers still throw synchronously instead of rejecting — cover both so a
+      // real failure (permissions policy, no gesture, etc.) surfaces instead of
+      // silently doing nothing.
+      Promise.resolve(result).catch((err) => showToast('전체화면 전환 실패: ' + (err?.message || err), true));
+    } catch (err) {
+      showToast('전체화면 전환 실패: ' + err.message, true);
+    }
   });
   ['fullscreenchange', 'webkitfullscreenchange'].forEach((evt) => document.addEventListener(evt, updateFullscreenBtn));
   updateFullscreenBtn();
@@ -160,6 +170,14 @@ function updateFullscreenBtn() {
   els.fullscreenBtn.classList.toggle('active', on);
   els.fullscreenBtn.title = on ? '전체화면 해제' : '전체화면';
   els.fullscreenBtn.innerHTML = on ? ICON_FS_EXIT : ICON_FS_ENTER;
+}
+
+// Full-screen blur + indeterminate progress bar shown while a connect attempt is in
+// flight, covering the whole viewport (pointer-events: auto) so nothing underneath is
+// clickable until it resolves either way.
+function setConnecting(active, label) {
+  els.connectOverlay.classList.toggle('show', active);
+  if (active && label) els.connectOverlayText.textContent = label;
 }
 
 let toastTimer = null;
@@ -177,6 +195,7 @@ function notifyConnectFailure(msg) {
   setStatus(msg, true);
   showToast(msg, true);
   showSpinner(false);
+  setConnecting(false);
 }
 
 /* ==================== Pedalboard UI ==================== */
@@ -455,6 +474,10 @@ async function connectBluetooth() {
       setControlsEnabled(false);
       setStatus('장치 연결 끊김');
     });
+    // The browser's own device chooser already blocks the page while it's open, so the
+    // overlay only needs to cover the GATT handshake/sync that happens after a device
+    // is picked — that's the part with no native UI of its own.
+    setConnecting(true, `${device.name || 'GP5'}에 페어링하는 중...`);
     const server = await device.gatt.connect();
     const service = await server.getPrimaryService(state.config.device.bluetooth.service_uuid);
     const char = await service.getCharacteristic(state.config.device.bluetooth.characteristic_uuid);
@@ -464,6 +487,7 @@ async function connectBluetooth() {
     state.bleDevice = device;
     state.bleChar = char;
     setStatus('동기화 중...');
+    setConnecting(true, '동기화하는 중...');
     await sendSysex(state.config.sync_commands.start_sync.sysex);
     await sleep(100);
     await sendSysex(state.config.sync_commands.request_patch_list.sysex);
@@ -505,6 +529,7 @@ async function connectUsb() {
   }
   try {
     setStatus('MIDI 접근 요청 중...');
+    setConnecting(true, 'MIDI 장치에 연결하는 중...');
     state.midiAccess = await navigator.requestMIDIAccess({ sysex: true });
     state.midiAccess.onstatechange = pickMidiPorts;
     pickMidiPorts();
@@ -549,6 +574,7 @@ function updateConnLed(connected, label) {
   els.connectBtn.classList.toggle('connected', connected);
   els.rescanBtn.disabled = connected;
   showSpinner(false);
+  setConnecting(false);
 }
 
 /* ==================== USB MIDI handlers ==================== */
