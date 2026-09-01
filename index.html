@@ -26,6 +26,10 @@
       <span id="connLed" class="led"></span>
       <span id="connLabel">Connect</span>
     </button>
+    <button id="rescanBtn" class="icon-btn" title="장치 다시 검색">
+      <svg viewBox="0 0 100 100"><path d="M20,40 A32,32 0 1 1 18,62" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round"/><path d="M18,16 L18,42 L44,42" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button id="fullscreenBtn" class="icon-btn" title="전체화면"></button>
     <button id="midiLogToggle" class="log-toggle" title="Bluetooth/USB로 들어오는 신호를 원본 그대로 확인">신호 로그</button>
   </div>
 </header>
@@ -103,6 +107,8 @@
 </div>
 
 <div class="scrim" id="scrim"></div>
+
+<div class="toast" id="toast"></div>
 
 <script src="app.js"></script>
 </body>

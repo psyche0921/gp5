@@ -55,7 +55,7 @@ if ('serviceWorker' in navigator) {
 async function init() {
   cacheEls();
   bindStaticEvents();
-  setupAutoFullscreen();
+  bindFullscreenToggle();
   try {
     const [cfgRes, ccRes] = await Promise.all([
       fetch('data/ble_sysex.json'),
@@ -77,6 +77,9 @@ function cacheEls() {
   els.connectBtn = $('#connectBtn');
   els.connLed = $('#connLed');
   els.connLabel = $('#connLabel');
+  els.rescanBtn = $('#rescanBtn');
+  els.fullscreenBtn = $('#fullscreenBtn');
+  els.toast = $('#toast');
   els.patchNum = $('#patchNum');
   els.patchName = $('#patchName');
   els.patchPrev = $('#patchPrev');
@@ -109,6 +112,7 @@ function cacheEls() {
 
 function bindStaticEvents() {
   els.connectBtn.addEventListener('click', onConnectClick);
+  els.rescanBtn.addEventListener('click', () => { if (!state.connected) attemptConnect(); });
   els.patchPrev.addEventListener('click', () => navigatePatch(-1));
   els.patchNext.addEventListener('click', () => navigatePatch(1));
   els.patchOpenList.addEventListener('click', openPatchList);
@@ -128,22 +132,51 @@ function bindStaticEvents() {
   els.midiLogClear.addEventListener('click', () => { els.midiLogBody.innerHTML = ''; });
 }
 
-// Browsers only allow requestFullscreen() from a user gesture, so a page load alone
-// can't force it — this fires on the first tap/click and keeps retrying on later taps
-// (e.g. after a Bluetooth pairing dialog drops fullscreen) so it stays out of the way.
-// Uses 'click' (not 'pointerdown') and bubble phase so it always runs AFTER a target
-// element's own click handler — otherwise this would fire first on every tap and burn
-// the transient user-activation that requestDevice()/requestMIDIAccess() need, making
-// the Connect button fail with "Must be handling a user gesture".
-function setupAutoFullscreen() {
+const ICON_FS_ENTER = `<svg viewBox="0 0 100 100"><path d="M12,34 V12 H34 M66,12 H88 V34 M88,66 V88 H66 M34,88 H12 V66" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const ICON_FS_EXIT = `<svg viewBox="0 0 100 100"><path d="M12,34 H34 V12 M66,12 V34 H88 M88,66 H66 V88 M34,88 V66 H12" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+// Browsers only allow requestFullscreen()/exitFullscreen() from a user gesture, so this
+// is wired to its own button instead of auto-firing on the first tap — an earlier
+// auto-fullscreen-on-any-click version stole the transient user-activation that
+// requestDevice()/requestMIDIAccess() need, making the Connect button randomly fail
+// with "Must be handling a user gesture".
+function bindFullscreenToggle() {
   const el = document.documentElement;
   const requestFn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-  if (!requestFn) return;
-  document.addEventListener('click', () => {
+  const exitFn = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+  if (!requestFn || !exitFn) { els.fullscreenBtn.style.display = 'none'; return; }
+
+  els.fullscreenBtn.addEventListener('click', () => {
     const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fsElement) return;
-    requestFn.call(el).catch(() => {});
+    if (fsElement) exitFn.call(document).catch(() => {});
+    else requestFn.call(el).catch(() => {});
   });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach((evt) => document.addEventListener(evt, updateFullscreenBtn));
+  updateFullscreenBtn();
+}
+
+function updateFullscreenBtn() {
+  const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  els.fullscreenBtn.classList.toggle('active', on);
+  els.fullscreenBtn.title = on ? '전체화면 해제' : '전체화면';
+  els.fullscreenBtn.innerHTML = on ? ICON_FS_EXIT : ICON_FS_ENTER;
+}
+
+let toastTimer = null;
+function showToast(msg, isError) {
+  clearTimeout(toastTimer);
+  els.toast.textContent = msg;
+  els.toast.classList.toggle('error', !!isError);
+  els.toast.classList.add('show');
+  toastTimer = setTimeout(() => els.toast.classList.remove('show'), 3200);
+}
+
+// Connection failures (device not found, chooser cancelled, GATT/MIDI errors) get both
+// the persistent status-bar line and a toast, since the status bar alone is easy to miss.
+function notifyConnectFailure(msg) {
+  setStatus(msg, true);
+  showToast(msg, true);
+  showSpinner(false);
 }
 
 /* ==================== Pedalboard UI ==================== */
@@ -372,11 +405,18 @@ function updatePatchDisplay() {
 /* ==================== Connection ==================== */
 
 async function onConnectClick() {
-  const mode = els.transportSelect.value;
   if (state.connected) {
     disconnectAll();
     return;
   }
+  await attemptConnect();
+}
+
+// Shared by the Connect button and the rescan button — re-running this while
+// disconnected re-opens the browser's Bluetooth device chooser (or re-requests MIDI
+// access) with a fresh scan, since neither API exposes a way to just "refresh" a list.
+async function attemptConnect() {
+  const mode = els.transportSelect.value;
   state.transport = mode;
   if (mode === 'bluetooth') await connectBluetooth();
   else await connectUsb();
@@ -398,7 +438,7 @@ function disconnectAll() {
 
 async function connectBluetooth() {
   if (!navigator.bluetooth) {
-    setStatus('이 브라우저는 Web Bluetooth를 지원하지 않습니다', true);
+    notifyConnectFailure('이 브라우저는 Web Bluetooth를 지원하지 않습니다');
     return;
   }
   try {
@@ -433,8 +473,7 @@ async function connectBluetooth() {
     setControlsEnabled(true);
     startPatchPolling();
   } catch (err) {
-    setStatus('연결 실패: ' + err.message, true);
-    showSpinner(false);
+    notifyConnectFailure('연결 실패: ' + err.message);
   }
 }
 
@@ -461,7 +500,7 @@ function stopPatchPolling() {
 
 async function connectUsb() {
   if (!navigator.requestMIDIAccess) {
-    setStatus('이 브라우저는 Web MIDI를 지원하지 않습니다 (Android Chrome은 대부분 미지원 — Bluetooth 권장)', true);
+    notifyConnectFailure('이 브라우저는 Web MIDI를 지원하지 않습니다 (Android Chrome은 대부분 미지원 — Bluetooth 권장)');
     return;
   }
   try {
@@ -470,7 +509,7 @@ async function connectUsb() {
     state.midiAccess.onstatechange = pickMidiPorts;
     pickMidiPorts();
   } catch (err) {
-    setStatus('MIDI 연결 실패: ' + err.message, true);
+    notifyConnectFailure('MIDI 연결 실패: ' + err.message);
   }
 }
 
@@ -491,7 +530,7 @@ function pickMidiPorts() {
     state.midiOut = null;
     state.connected = false;
     updateConnLed(false);
-    setStatus('MIDI 출력 장치를 찾을 수 없습니다', true);
+    notifyConnectFailure('MIDI 출력 장치를 찾을 수 없습니다');
     setControlsEnabled(false);
   }
 
@@ -508,6 +547,7 @@ function updateConnLed(connected, label) {
   els.connLed.classList.toggle('on', connected);
   els.connLabel.textContent = connected ? (label || '연결됨') : 'Connect';
   els.connectBtn.classList.toggle('connected', connected);
+  els.rescanBtn.disabled = connected;
   showSpinner(false);
 }
 
