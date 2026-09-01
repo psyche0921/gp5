@@ -288,6 +288,17 @@ select { font-family: inherit; }
   box-shadow: 0 0 24px hsla(var(--hue), 85%, 55%, 0.6), inset 0 1px 0 rgba(255,255,255,0.18), inset 0 -14px 22px rgba(0,0,0,0.25);
 }
 
+/* Idle sparkle for bypassed pedals: a brief flash in each pedal's own hue, timed via
+   animation-delay (set per-card in JS from WAVE_ORDER) to sweep left-to-right across
+   row 1 then right-to-left across row 2, like a wave. */
+@keyframes pedal-wave {
+  0%   { box-shadow: none; border-color: var(--off); }
+  4%   { box-shadow: 0 0 22px 2px hsla(var(--hue), 85%, 58%, 0.65); border-color: hsl(var(--hue), 85%, 62%); }
+  11%  { box-shadow: none; border-color: var(--off); }
+  100% { box-shadow: none; border-color: var(--off); }
+}
+.pedal:not(.on) { animation: pedal-wave 5s ease-in-out infinite; }
+
 .pedal-icon {
   width: 3.4rem; height: 3.4rem;
   color: var(--off);
@@ -331,6 +342,7 @@ select { font-family: inherit; }
 }
 .spinner.active { display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
+.build-version { flex: 0 0 auto; font-family: 'Consolas', monospace; font-size: 0.68rem; color: #5c5674; letter-spacing: 0.02em; }
 
 /* ---------- Toast ---------- */
 .toast {

@@ -6,8 +6,17 @@
    for the Valeton GP5 multi-effects pedal.
    ============================================================ */
 
+// Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
+const BUILD_VERSION = '2609011549';
+
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
+
+// Idle "chase" order for bypassed pedals: left-to-right across row 1 (nr..cab), then
+// down and right-to-left back across row 2 (ns..eq) — a boustrophedon sweep matching
+// the 5-wide grid, not just BLOCK_ORDER's plain left-to-right sequence.
+const WAVE_ORDER = { nr: 0, pre: 1, dst: 2, amp: 3, cab: 4, ns: 5, rvb: 6, dly: 7, mod: 8, eq: 9 };
+const WAVE_STEP_S = 0.35;
 
 // Minimal line-art icons (stroke = currentColor), one per effect category —
 // same visual language as a hardware stage-floor controller: no emoji, no photoreal art.
@@ -56,6 +65,7 @@ async function init() {
   cacheEls();
   bindStaticEvents();
   bindFullscreenToggle();
+  els.buildVersion.textContent = `v${BUILD_VERSION}`;
   try {
     const [cfgRes, ccRes] = await Promise.all([
       fetch('data/ble_sysex.json'),
@@ -105,6 +115,7 @@ function cacheEls() {
   els.scrim = $('#scrim');
   els.statusText = $('#statusText');
   els.statusSpinner = $('#statusSpinner');
+  els.buildVersion = $('#buildVersion');
   els.midiLogToggle = $('#midiLogToggle');
   els.midiLog = $('#midiLog');
   els.midiLogBody = $('#midiLogBody');
@@ -209,6 +220,7 @@ function buildPedalboard() {
     card.className = 'pedal';
     card.id = `pedal-${name}`;
     card.style.setProperty('--hue', hue);
+    card.style.animationDelay = `${(WAVE_ORDER[name] ?? 0) * WAVE_STEP_S}s`;
     card.disabled = true;
     card.innerHTML = `
       <span class="pedal-icon">${ICONS[name] || ''}</span>
