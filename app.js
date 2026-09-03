@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609031347';
+const BUILD_VERSION = '2609031407';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -898,6 +898,8 @@ function handleBleNotification(event) {
       extractKnownParams();
     }
   } else if (bytes[5] === 0 && bytes[6] === 5 && bytes.length === 148 && bytes[7] === 0 && bytes[8] === 4) {
+    state.patchDataChunks[4] = decodePatchDataChunk(bytes);
+    extractKnownParams();
     setStatus('GP5 동기화 완료');
     showSpinner(false);
     state.patchDataLoaded = true;
@@ -973,31 +975,46 @@ function readFloat32LE(buf, offset) {
   return new DataView(new Uint8Array(buf.slice(offset, offset + 4)).buffer).getFloat32(0, true);
 }
 
-// Reverse-engineered from a live capture: patch_data parts 2 and 3 (100 decoded bytes
-// each) concatenate into one 200-byte array holding every block's 8 reserved parameter
-// slots (float32 LE, 4 bytes each) back to back, starting at block index 2 (dst) —
-// i.e. offset = (blockIndex - 2) * 32 + paramIndex * 4. Blocks nr/pre/ns fall outside
-// this pair (their slots are presumably in parts 0/1/4) and aren't decoded yet, so their
-// drawer still shows the effect's default value rather than the real saved one.
-const PARAM_READ_BLOCKS = ['dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb'];
+// Reverse-engineered from live BLE HCI captures (set a distinct value per block, saved,
+// forced a reload, diffed the raw bytes against what was sent). Every block gets 8
+// reserved parameter slots (float32 LE, 4 bytes each), but the slots for different
+// blocks live in different patch_data parts:
+//   - part1 (100 decoded bytes): nr at offset 36, pre at offset 68 (i.e. 36 + blockIndex*32,
+//     for blockIndex 0-1)
+//   - part2+part3 concatenated (200 bytes): dst..rvb (blockIndex 2-8), offset =
+//     (blockIndex - 2) * 32 + paramIndex * 4
+//   - part4 (68 decoded bytes): ns (NAM), offset = 24 + paramIndex * 4
+function extractBlockParams(name, buf, base) {
+  const bState = state.blocks[name] = state.blocks[name] || {};
+  const params = [];
+  for (let p = 0; p < 8; p++) {
+    const off = base + p * 4;
+    if (off < 0 || off + 4 > buf.length) continue;
+    params[p] = readFloat32LE(buf, off);
+  }
+  bState.parameters = params;
+}
 
 function extractKnownParams() {
+  const part1 = state.patchDataChunks[1];
   const part2 = state.patchDataChunks[2];
   const part3 = state.patchDataChunks[3];
-  if (!part2 || !part3) return;
-  const buf = part2.concat(part3);
-  BLOCK_ORDER.forEach((name, blockIdx) => {
-    if (!PARAM_READ_BLOCKS.includes(name)) return;
-    const base = (blockIdx - 2) * 32;
-    const bState = state.blocks[name] = state.blocks[name] || {};
-    const params = [];
-    for (let p = 0; p < 8; p++) {
-      const off = base + p * 4;
-      if (off < 0 || off + 4 > buf.length) continue;
-      params[p] = readFloat32LE(buf, off);
-    }
-    bState.parameters = params;
-  });
+  const part4 = state.patchDataChunks[4];
+
+  if (part1) {
+    extractBlockParams('nr', part1, 36 + 0 * 32);
+    extractBlockParams('pre', part1, 36 + 1 * 32);
+  }
+  if (part2 && part3) {
+    const buf = part2.concat(part3);
+    ['dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb'].forEach((name) => {
+      const blockIdx = BLOCK_ORDER.indexOf(name);
+      extractBlockParams(name, buf, (blockIdx - 2) * 32);
+    });
+  }
+  if (part4) {
+    extractBlockParams('ns', part4, 24);
+  }
 }
 
 function readEffectIdHex(bytes, start) {
