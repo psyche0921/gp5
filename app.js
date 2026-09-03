@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609031055';
+const BUILD_VERSION = '2609031147';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -40,6 +40,7 @@ const state = {
   currentPatch: 0,
   patchNames: [],
   blocks: {},              // name -> { enabled, effectId(hex), effect(idx), effectName, parameters:[] }
+  patchDataChunks: {},      // patch_data part index (0-3) -> decoded 100-byte data chunk, see decodePatchDataChunk
   activeBlock: null,
   syncing: false,
   patchPollTimer: null,
@@ -488,6 +489,7 @@ function disconnectAll() {
   state.midiIn = [];
   state.connected = false;
   state.blocks = {};
+  state.patchDataChunks = {};
   state.patchDataLoaded = false;
   updateConnLed(false);
   setControlsEnabled(false);
@@ -787,6 +789,7 @@ async function selectPatch(num) {
       state.midiOut.send([0xb0, cmds.presetSelect.cc, clampMidi(num)]);
       state.currentPatch = num;
       state.blocks = {};
+      state.patchDataChunks = {};
       updatePatchDisplay();
       refreshAllPedals();
     }
@@ -796,6 +799,7 @@ async function selectPatch(num) {
     .replace('{PATCH}', num.toString(16).padStart(2, '0'));
   await sendSysex(buildSysexCommand(command));
   state.blocks = {};
+  state.patchDataChunks = {};
   state.currentPatch = num;
   updatePatchDisplay();
   refreshAllPedals();
@@ -880,6 +884,7 @@ function handleBleNotification(event) {
     const patch = bytes[15] * 16 + bytes[16];
     if (patch !== state.currentPatch || !state.patchDataLoaded) {
       state.blocks = {};
+      state.patchDataChunks = {};
       state.currentPatch = patch;
       updatePatchDisplay();
       setStatus(`패치 ${patch} 데이터 로드 중...`);
@@ -888,6 +893,10 @@ function handleBleNotification(event) {
   } else if (bytes[5] === 0 && bytes[6] === 5 && bytes.length === 212) {
     if (bytes[7] === 0 && bytes[8] === 0) parsePatchData1(bytes);
     else if (bytes[7] === 0 && bytes[8] === 1) parsePatchData2(bytes);
+    if (bytes[7] === 0 && bytes[8] >= 0 && bytes[8] <= 3) {
+      state.patchDataChunks[bytes[8]] = decodePatchDataChunk(bytes);
+      extractKnownParams();
+    }
   } else if (bytes[5] === 0 && bytes[6] === 5 && bytes.length === 148 && bytes[7] === 0 && bytes[8] === 4) {
     setStatus('GP5 동기화 완료');
     showSpinner(false);
@@ -896,6 +905,7 @@ function handleBleNotification(event) {
   } else if (bytes[5] === 0 && bytes[6] === 1 && bytes[12] === 2 && bytes[13] === 4 && bytes[14] === 3 && bytes.length === 24) {
     const patch = bytes[15] * 16 + bytes[16];
     state.blocks = {};
+    state.patchDataChunks = {};
     state.currentPatch = patch;
     updatePatchDisplay();
     setStatus(`장치에서 패치 ${patch}(으)로 변경됨, 로드 중...`);
@@ -944,6 +954,50 @@ function parsePatchData2(bytes) {
     }
   });
   refreshAllPedals();
+}
+
+// GP5's outgoing SysEx commands nibble-encode every payload byte as its own wire byte
+// (see buildSysexCommand/addzero) — patch_data notifications turn out to use the same
+// encoding for their parameter-value region, even though the block-enabled bitflags and
+// effect IDs elsewhere in the same messages are plain bytes. Confirmed against a live
+// BLE HCI capture: this reconstructs the true parameter bytes from the wire bytes.
+function decodePatchDataChunk(bytes) {
+  const logical = [];
+  for (let i = 3; i + 1 < bytes.length - 1; i += 2) {
+    logical.push(((bytes[i] & 0x0f) << 4) | (bytes[i + 1] & 0x0f));
+  }
+  return logical.slice(4); // drop the CRC + 3-byte part-marker header
+}
+
+function readFloat32LE(buf, offset) {
+  return new DataView(new Uint8Array(buf.slice(offset, offset + 4)).buffer).getFloat32(0, true);
+}
+
+// Reverse-engineered from a live capture: patch_data parts 2 and 3 (100 decoded bytes
+// each) concatenate into one 200-byte array holding every block's 8 reserved parameter
+// slots (float32 LE, 4 bytes each) back to back, starting at block index 2 (dst) —
+// i.e. offset = (blockIndex - 2) * 32 + paramIndex * 4. Blocks nr/pre/ns fall outside
+// this pair (their slots are presumably in parts 0/1/4) and aren't decoded yet, so their
+// drawer still shows the effect's default value rather than the real saved one.
+const PARAM_READ_BLOCKS = ['dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb'];
+
+function extractKnownParams() {
+  const part2 = state.patchDataChunks[2];
+  const part3 = state.patchDataChunks[3];
+  if (!part2 || !part3) return;
+  const buf = part2.concat(part3);
+  BLOCK_ORDER.forEach((name, blockIdx) => {
+    if (!PARAM_READ_BLOCKS.includes(name)) return;
+    const base = (blockIdx - 2) * 32;
+    const bState = state.blocks[name] = state.blocks[name] || {};
+    const params = [];
+    for (let p = 0; p < 8; p++) {
+      const off = base + p * 4;
+      if (off < 0 || off + 4 > buf.length) continue;
+      params[p] = readFloat32LE(buf, off);
+    }
+    bState.parameters = params;
+  });
 }
 
 function readEffectIdHex(bytes, start) {
