@@ -7,16 +7,10 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609011549';
+const BUILD_VERSION = '2609031055';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
-
-// Idle "chase" order for bypassed pedals: left-to-right across row 1 (nr..cab), then
-// down and right-to-left back across row 2 (ns..eq) — a boustrophedon sweep matching
-// the 5-wide grid, not just BLOCK_ORDER's plain left-to-right sequence.
-const WAVE_ORDER = { nr: 0, pre: 1, dst: 2, amp: 3, cab: 4, ns: 5, rvb: 6, dly: 7, mod: 8, eq: 9 };
-const WAVE_STEP_S = 0.35;
 
 // Minimal line-art icons (stroke = currentColor), one per effect category —
 // same visual language as a hardware stage-floor controller: no emoji, no photoreal art.
@@ -101,6 +95,7 @@ function cacheEls() {
   els.patchListBody = $('#patchListBody');
   els.patchListClose = $('#patchListClose');
   els.tunerBtn = $('#tunerBtn');
+  els.savePatchBtn = $('#savePatchBtn');
   els.masterVolWrap = $('#masterVolWrap');
   els.masterVol = $('#masterVol');
   els.masterVolValue = $('#masterVolValue');
@@ -131,6 +126,7 @@ function bindStaticEvents() {
   els.patchOpenList.addEventListener('click', openPatchList);
   els.patchListClose.addEventListener('click', closePatchList);
   els.tunerBtn.addEventListener('click', toggleTuner);
+  els.savePatchBtn.addEventListener('click', savePatch);
   els.masterVol.addEventListener('input', onMasterVolInput);
   els.drawerClose.addEventListener('click', closeDrawer);
   els.scrim.addEventListener('click', () => { closeDrawer(); closePatchList(); });
@@ -220,7 +216,6 @@ function buildPedalboard() {
     card.className = 'pedal';
     card.id = `pedal-${name}`;
     card.style.setProperty('--hue', hue);
-    card.style.animationDelay = `${(WAVE_ORDER[name] ?? 0) * WAVE_STEP_S}s`;
     card.disabled = true;
     card.innerHTML = `
       <span class="pedal-icon">${ICONS[name] || ''}</span>
@@ -251,6 +246,7 @@ function setControlsEnabled(enabled) {
   els.patchNext.disabled = !enabled;
   els.patchOpenList.disabled = !enabled;
   els.tunerBtn.disabled = !enabled || state.transport !== 'usb';
+  els.savePatchBtn.disabled = !enabled || state.transport !== 'bluetooth';
   els.masterVolWrap.classList.toggle('disabled', !(enabled && state.transport === 'usb'));
   els.masterVol.disabled = !(enabled && state.transport === 'usb');
 }
@@ -806,6 +802,32 @@ async function selectPatch(num) {
   await sleep(200);
   setStatus(`패치 ${num} 불러오는 중...`);
   await sendSysex(state.config.sync_commands.request_patch_data.sysex);
+}
+
+// Commits the current live edits to the active patch slot on GP5. There's no
+// documented SysEx command for this — it was reverse-engineered from a BLE HCI snoop
+// capture of Valeton Suite's own Save action (patch number + a 10-byte, zero-padded
+// ASCII name field), since GP5 otherwise discards parameter/effect edits on patch
+// change or power-off.
+async function savePatch() {
+  if (state.transport !== 'bluetooth' || !state.bleChar) return;
+  const name = (state.patchNames[state.currentPatch] || '').slice(0, 10);
+  const nameHex = Array.from({ length: 10 }, (_, i) => (name.charCodeAt(i) || 0).toString(16).padStart(2, '0')).join('');
+  const command = state.config.patch_commands.save_patch.command_template
+    .replace('{PATCH}', state.currentPatch.toString(16).padStart(2, '0'))
+    .replace('{NAME}', nameHex);
+
+  els.savePatchBtn.disabled = true;
+  setConnecting(true, '패치 저장하는 중...');
+  await sendSysex(buildSysexCommand(command));
+  await sleep(150);
+  setConnecting(false);
+  els.savePatchBtn.disabled = false;
+
+  els.savePatchBtn.classList.add('saved');
+  setTimeout(() => els.savePatchBtn.classList.remove('saved'), 1200);
+  showToast(`패치 ${state.currentPatch} "${name || '(이름 없음)'}" 저장 완료`);
+  setStatus(`패치 ${state.currentPatch} 저장 완료`);
 }
 
 function navigatePatch(dir) {

@@ -19,6 +19,10 @@
     "change_patch": {
       "command_template": "0100061143{PATCH}000000",
       "notes": "PATCH is 2-digit hex (00-63 for patches 0-99)"
+    },
+    "save_patch": {
+      "command_template": "010010114a{PATCH}000000{NAME}",
+      "notes": "Writes the currently active patch state to slot PATCH (2-digit hex) under NAME (10-byte ASCII, zero-padded/truncated, 20 hex chars). Reverse-engineered from a live BLE HCI snoop capture of Valeton Suite's Save action, not from official docs."
     }
   },
   "block_commands": {
