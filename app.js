@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041512';
+const BUILD_VERSION = '2609041515';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -793,21 +793,45 @@ function refreshConsoleLogDisplay() {
 
 function downloadConsoleLogs() {
   if (state.consoleLogs.length === 0) {
-    alert('다운로드할 로그가 없습니다.');
+    alert('로그가 없습니다.');
     return;
   }
   const content = state.consoleLogs
     .map(log => `[${log.time}] [${log.level.toUpperCase()}] ${log.message}`)
     .join('\n');
+
+  // Try standard download first
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `console-log-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  link.download = `console-log-${Date.now()}.txt`;
+
+  try {
+    // Mobile fallback: use navigator.share if available
+    if (navigator.share) {
+      navigator.share({
+        title: 'Console Logs',
+        text: content
+      }).catch(() => {
+        // If share fails, try traditional download
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      });
+    } else {
+      // Desktop: traditional download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  } catch (err) {
+    console.error('Download failed:', err);
+    // Last resort: show in alert (for very limited environments)
+    alert('로그를 복사해주세요:\n\n' + content.slice(0, 500) + '...');
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+  }
 }
 
 // Only record while the panel is actually open — GP5 sends a steady stream of
