@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041521';
+const BUILD_VERSION = '2609041524';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1000,6 +1000,10 @@ async function selectPatch(num) {
 async function savePatch() {
   if (state.transport !== 'bluetooth' || !state.bleChar) return;
   await waitForEffectChangeSettle();
+
+  console.log(`[savePatch] Saving patch ${state.currentPatch}`);
+  console.log(`[savePatch] Current blocks state:`, JSON.stringify(Object.entries(state.blocks).map(([name, block]) => ({ name, params: block.parameters?.slice(0, 8) }))));
+
   const name = (state.patchNames[state.currentPatch] || '').slice(0, 10);
   const nameHex = Array.from({ length: 10 }, (_, i) => (name.charCodeAt(i) || 0).toString(16).padStart(2, '0')).join('');
   const command = state.config.patch_commands.save_patch.command_template
@@ -1013,6 +1017,7 @@ async function savePatch() {
   setConnecting(false);
   els.savePatchBtn.disabled = false;
 
+  console.log(`[savePatch] Save command sent`);
   els.savePatchBtn.classList.add('saved');
   setTimeout(() => els.savePatchBtn.classList.remove('saved'), 1200);
   showToast(`패치 ${state.currentPatch} "${name || '(이름 없음)'}" 저장 완료`);
