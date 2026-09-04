@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041551';
+const BUILD_VERSION = '2609041605';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1118,6 +1118,21 @@ function describeBleNotification(bytes) {
   return `미인식 (len ${len}, [5]=${b5} [6]=${b6} [7]=${b7} [8]=${b8})`;
 }
 
+// Shared by parsePatchData1 (pre) and parsePatchData2 (dst..ns): reads the effect-ID
+// bytes at `offset` in the raw notification and, if it matches a known effect in
+// ble_sysex.json, records the block's current effect/effectName.
+function applyEffectIdAt(bytes, name, offset) {
+  const effHex = readEffectIdHex(bytes, offset);
+  state.blocks[name] = state.blocks[name] || {};
+  state.blocks[name].effectId = effHex;
+  const block = state.config.blocks.find((b) => b.name === name);
+  const effData = block?.effects?.[effHex];
+  if (effData) {
+    state.blocks[name].effect = effData.id;
+    state.blocks[name].effectName = effData.name;
+  }
+}
+
 function parsePatchData1(bytes) {
   const status = {
     nr: !!(bytes[152] & (1 << 0)), pre: !!(bytes[152] & (1 << 1)),
@@ -1130,20 +1145,20 @@ function parsePatchData1(bytes) {
     state.blocks[name] = state.blocks[name] || {};
     state.blocks[name].enabled = enabled;
   });
+
+  // pre's effect ID lives at raw offset 203 in this notification -- found via a live
+  // BLE HCI capture (adb bugreport -> btsnoop_hci.log): after switching pre to Toucher
+  // ("0f000001"), that exact byte pattern appeared uniquely at offset 203, nowhere else
+  // in part1 or part2. nr has only one effect (Gate), so it has no selector slot at all
+  // and doesn't need this. Previously pre's effectId was never read, so its effect type
+  // always looked unset/reverted after a save+reload even though it was saved correctly.
+  applyEffectIdAt(bytes, 'pre', 203);
 }
 
 function parsePatchData2(bytes) {
   const offsets = { dst: 11, ns: 67, amp: 19, cab: 27, eq: 35, mod: 43, dly: 51, rvb: 59 };
   Object.entries(offsets).forEach(([name, offset]) => {
-    const effHex = readEffectIdHex(bytes, offset);
-    state.blocks[name] = state.blocks[name] || {};
-    state.blocks[name].effectId = effHex;
-    const block = state.config.blocks.find((b) => b.name === name);
-    const effData = block?.effects?.[effHex];
-    if (effData) {
-      state.blocks[name].effect = effData.id;
-      state.blocks[name].effectName = effData.name;
-    }
+    applyEffectIdAt(bytes, name, offset);
   });
   refreshAllPedals();
 }
