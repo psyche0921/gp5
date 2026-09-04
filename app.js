@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041658';
+const BUILD_VERSION = '2609042227';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1198,7 +1198,16 @@ function parsePatchData1(bytes) {
   // always looked unset/reverted after a save+reload even though it was saved correctly.
   applyEffectIdAt(bytes, 'pre', 203);
   console.log(`[parsePatchData1] pre effectId=${state.blocks.pre.effectId} effect=${state.blocks.pre.effect} effectName=${state.blocks.pre.effectName}`);
-  refreshPedal('pre');
+  // If the drawer is open on PRE, re-render just the drawer instead of refreshing the
+  // pedalboard UI, to avoid the flash/flicker when the user is interacting with the
+  // drawer (e.g., changing effect type via dropdown).
+  const drawerOpen = els.drawer.classList.contains('open');
+  const drawerBlockName = state.activeBlock?.name;
+  if (drawerOpen && drawerBlockName === 'pre') {
+    renderDrawerParams(state.activeBlock, true);
+  } else {
+    refreshPedal('pre');
+  }
 }
 
 function parsePatchData2(bytes) {
@@ -1206,7 +1215,17 @@ function parsePatchData2(bytes) {
   Object.entries(offsets).forEach(([name, offset]) => {
     applyEffectIdAt(bytes, name, offset);
   });
-  refreshAllPedals();
+  // If the drawer is open and showing one of these blocks, re-render just the drawer
+  // to avoid flashing the entire pedalboard UI (refreshAllPedals) while the user has
+  // a dropdown open or is actively using the drawer.
+  const drawerOpen = els.drawer.classList.contains('open');
+  const drawerBlockName = state.activeBlock?.name;
+  const isDrawerBlockAffected = ['dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb'].includes(drawerBlockName);
+  if (drawerOpen && isDrawerBlockAffected) {
+    renderDrawerParams(state.activeBlock, true);
+  } else {
+    refreshAllPedals();
+  }
 }
 
 // GP5's outgoing SysEx commands nibble-encode every payload byte as its own wire byte
