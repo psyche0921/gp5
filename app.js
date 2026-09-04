@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041609';
+const BUILD_VERSION = '2609041641';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1256,26 +1256,33 @@ function extractKnownParams() {
   }
 }
 
-// The effect-ID byte for each block lives at (declared offset + 7) -- the LAST byte of
-// its 8-byte stride, not the first -- and it's a single byte, not 4: verified via a live
-// raw-byte dump against Valeton Suite's own display (dly byte 0x0b -> Suite showed "Pure";
-// rvb byte 0x0c -> Suite showed "Room"). ble_sysex.json keys are 8-hex-char strings whose
-// only non-zero byte is this one, so pad it out to match. Reading straight from `start`
-// (the old behavior) always landed on 0x00, silently falling back to whichever effect has
-// id 0 for that block -- which is why an effect-type change never appeared to "stick" on
-// reload even though it was actually saved correctly on the device the whole time.
-// The per-block 8-byte stride in patch_data part 2 holds the distinguishing effect byte
-// at (start+1), not at `start` itself -- verified by dumping the full raw packet and
-// searching for the byte value Valeton Suite confirmed as ground truth (Church reverb's
-// key "0200000c" -> distinguishing byte 0x02): it appears exactly once inside rvb's own
-// 8-byte region, at start+1. byte(start+7) is a constant "family" marker shared by every
-// effect in that block (0x0c for every reverb, 0x0b for every delay, etc.) -- reading
-// that instead (the previous, wrong assumption) always decoded to whichever effect in
-// the family has distinguishing byte 0, regardless of what's actually live on the device.
+// The per-block 8-byte stride in patch_data holds the distinguishing effect byte
+// nibble-pair-encoded across TWO bytes -- (start) is its high nibble, (start+1) its low
+// nibble -- not as a single byte at (start+1) like earlier reverse-engineering assumed.
+// That assumption happened to work for every effect whose distinguishing byte is <16
+// (Green OD=0x00, Room=0x00, Pure=0x00, ...) because the missing high nibble was always
+// zero there, but it silently produced garbage for any effect >=0x10 -- e.g. amp's J-120
+// CL (0x14), Foxy 30N (0x11), UK 45 (0x2a); pre's Boost (0x1a) and Micro Boost (0x14);
+// dst's SM Dist (0x2a), Plustortion (0x29), La Charger (0x30), etc. This is why PRE's
+// effect type (Boost, Micro Boost) never read back correctly after a save+reload even
+// once pre was given an offset at all: offset 203 was right, but the single-byte read
+// turned Boost's 0x1a into 0x0a and Micro Boost's 0x14 into 0x04, neither of which
+// matches any real effect key.
+//
+// Verified via a live BLE HCI capture (adb bugreport -> btsnoop_hci.log) of the official
+// Valeton Suite app: reconstructing amp's distinguishing byte as (bytes[19]<<4)|bytes[20]
+// across many patch_data captures produced "01000007" (Tweedy), "14000007" (J-120 CL),
+// and "24000007" -- all three exact, real keys in ble_sysex.json. Same reconstruction at
+// pre's offset 203 turned Suite-confirmed Boost/Micro Boost selections into "1a000000"
+// and "14000000" byte-for-byte. The marker byte (start+7) needs no such fix -- its own
+// high nibble (start+6) was confirmed to always be zero across every block in the
+// capture, so a single byte read there remains correct.
 function readEffectIdHex(bytes, start) {
-  const distinguishing = bytes[start + 1];
+  const distHi = bytes[start];
+  const distLo = bytes[start + 1];
   const marker = bytes[start + 7];
-  if (distinguishing === undefined || marker === undefined) return '';
+  if (distHi === undefined || distLo === undefined || marker === undefined) return '';
+  const distinguishing = (distHi << 4) | distLo;
   return distinguishing.toString(16).padStart(2, '0') + '0000' + marker.toString(16).padStart(2, '0');
 }
 
