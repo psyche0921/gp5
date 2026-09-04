@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041510';
+const BUILD_VERSION = '2609041512';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -145,6 +145,7 @@ function cacheEls() {
   els.consoleLogToggle = $('#consoleLogToggle');
   els.consoleLog = $('#consoleLog');
   els.consoleLogBody = $('#consoleLogBody');
+  els.consoleLogDownload = $('#consoleLogDownload');
   els.consoleLogClear = $('#consoleLogClear');
   els.consoleLogClose = $('#consoleLogClose');
 }
@@ -188,6 +189,7 @@ function bindStaticEvents() {
     else openConsoleLog();
   });
   els.consoleLogClose.addEventListener('click', closeConsoleLog);
+  els.consoleLogDownload.addEventListener('click', downloadConsoleLogs);
   els.consoleLogClear.addEventListener('click', () => {
     state.consoleLogs = [];
     els.consoleLogBody.innerHTML = '';
@@ -787,6 +789,25 @@ function refreshConsoleLogDisplay() {
       appendConsoleLogRow(log.time, log.level, log.message);
     });
   }
+}
+
+function downloadConsoleLogs() {
+  if (state.consoleLogs.length === 0) {
+    alert('다운로드할 로그가 없습니다.');
+    return;
+  }
+  const content = state.consoleLogs
+    .map(log => `[${log.time}] [${log.level.toUpperCase()}] ${log.message}`)
+    .join('\n');
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `console-log-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 // Only record while the panel is actually open — GP5 sends a steady stream of
