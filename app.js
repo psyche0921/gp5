@@ -45,6 +45,7 @@ const state = {
   syncing: false,
   patchPollTimer: null,
   patchDataLoaded: false,
+  blinkEpoch: 0,            // performance.now() reference the idle pedal-blink animation is synced against
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -72,6 +73,7 @@ async function init() {
     setStatus('설정 파일 로드 실패: ' + err.message, true);
     return;
   }
+  state.blinkEpoch = performance.now();
   buildPedalboard();
   setStatus('연결을 기다리는 중...');
 }
@@ -228,12 +230,27 @@ function buildPedalboard() {
   });
 }
 
+// The pedal-blink CSS animation (style.css) is 2.5s, unstaggered, so every bypassed
+// pedal reads as "on the same beat" — but a CSS animation restarts its own timeline
+// the moment an element starts matching :not(.on) again, so a pedal that just got
+// toggled off (patch load, block disabled) would flash out of phase with pedals that
+// have been idle since page load. Stamping a negative animation-delay here fast-forwards
+// it to wherever it "should" be in the shared cycle, so it snaps back into sync instead.
+const PEDAL_BLINK_CYCLE_MS = 2500;
+function resyncBlink(card) {
+  const elapsed = (performance.now() - state.blinkEpoch) % PEDAL_BLINK_CYCLE_MS;
+  card.style.animationDelay = `-${elapsed}ms`;
+}
+
 function refreshPedal(name) {
   const card = document.getElementById(`pedal-${name}`);
   if (!card) return;
   const b = state.blocks[name] || {};
   const block = state.config.blocks.find((x) => x.name === name);
-  card.classList.toggle('on', !!b.enabled);
+  const wasOn = card.classList.contains('on');
+  const isOn = !!b.enabled;
+  card.classList.toggle('on', isOn);
+  if (wasOn && !isOn) resyncBlink(card);
   card.querySelector('.pedal-effect').textContent = b.effectName || block?.label || '';
 }
 
@@ -300,9 +317,15 @@ function openDrawer(block, keepEffect = true) {
   els.drawerHint.style.display = isBluetooth ? 'none' : 'block';
   els.drawerHint.textContent = 'USB 모드에서는 세부 파라미터를 편집할 수 없습니다. 정밀 편집은 Bluetooth 모드를 사용하세요.';
 
-  params.forEach((param, idx) => {
-    const value = keepEffect ? (bState.parameters?.[idx] ?? param.default) : Math.round((param.min + param.max) / 2);
-    els.drawerKnobs.appendChild(buildKnob(block, param, idx, value, isBluetooth));
+  // param.index is the device-side algId, e.g. Room reverb is Mix=0, Decay=2, Trail=3 --
+  // it is NOT the same as this array's position once an effect's algIds skip a slot, so
+  // both the read (bState.parameters) and the write (sendParamChange, via buildKnob) must
+  // key off param.index rather than the forEach position or they silently hit the wrong
+  // device-side parameter slot.
+  params.forEach((param) => {
+    const algId = param.index;
+    const value = keepEffect ? (bState.parameters?.[algId] ?? param.default) : Math.round((param.min + param.max) / 2);
+    els.drawerKnobs.appendChild(buildKnob(block, param, algId, value, isBluetooth));
   });
 
   els.drawer.classList.add('open');
@@ -527,6 +550,7 @@ async function connectBluetooth() {
 
     state.bleDevice = device;
     state.bleChar = char;
+    bleWriteChain = Promise.resolve(); // drop any write left pending from a prior connection
     setStatus('동기화 중...');
     setConnecting(true, '동기화하는 중...');
     await sendSysex(state.config.sync_commands.start_sync.sysex);
@@ -709,13 +733,26 @@ function appendMidiLogRow(portName, bytes, decoded) {
 
 /* ==================== Commands: Bluetooth (SysEx) ==================== */
 
+// Web Bluetooth rejects a write issued while another GATT operation on the same
+// device is still in flight ("GATT operation already in progress") and most callers
+// below fire sendSysex without awaiting it -- e.g. an effect-type change immediately
+// followed by a debounced knob-drag write. Without serialization the second write
+// throws and is silently dropped, so the value never reaches the device even though
+// the UI already shows it optimistically. Chaining every write onto one promise
+// makes them run strictly one-at-a-time regardless of how callers invoke this.
+let bleWriteChain = Promise.resolve();
+
 async function sendSysex(hexString) {
   if (!state.bleChar) return;
   const hex = hexString.trim().replace(/[^0-9a-fA-F]/g, '');
   const bytes = [];
   for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+  const char = state.bleChar;
+  const run = () => char.writeValueWithoutResponse(new Uint8Array(bytes));
+  const attempt = bleWriteChain.then(run, run);
+  bleWriteChain = attempt.then(() => {}, () => {});
   try {
-    await state.bleChar.writeValueWithoutResponse(new Uint8Array(bytes));
+    await attempt;
   } catch (err) {
     setStatus('전송 오류: ' + err.message, true);
   }
@@ -765,11 +802,27 @@ function sendBlockEffectChange(block, effectHex) {
   state.blocks[block.name].effect = effData?.id ?? 0;
   state.blocks[block.name].effectName = effData?.name || '';
   state.blocks[block.name].parameters = [];
+  // The device needs real time to load the new effect's DSP algorithm before it can
+  // accept a parameter write -- or a save -- against it: a command sent too soon after
+  // a type change targets a state the device hasn't finished switching into yet, and
+  // silently doesn't stick. Repro'd live: a knob drag ~2s after the type change
+  // persisted fine, ~1s after did not. sendParamChange and savePatch both wait out
+  // this cooldown before transmitting.
+  state.lastEffectChangeAt = performance.now();
   refreshPedal(block.name);
 }
 
-function sendParamChange(block, paramIndex, value) {
+const EFFECT_CHANGE_SETTLE_MS = 500;
+
+async function waitForEffectChangeSettle() {
+  const elapsed = performance.now() - (state.lastEffectChangeAt || 0);
+  if (elapsed < EFFECT_CHANGE_SETTLE_MS) await sleep(EFFECT_CHANGE_SETTLE_MS - elapsed);
+}
+
+async function sendParamChange(block, paramIndex, value) {
   if (state.transport === 'usb') return; // not supported over CC map
+  await waitForEffectChangeSettle();
+
   const floatHex = floatToHexLE(value).join('');
   const command = state.config.block_commands.change_parameter.command_template
     .replace('{BLOCK}', block.id.toString(16).padStart(2, '0'))
@@ -815,6 +868,7 @@ async function selectPatch(num) {
 // change or power-off.
 async function savePatch() {
   if (state.transport !== 'bluetooth' || !state.bleChar) return;
+  await waitForEffectChangeSettle();
   const name = (state.patchNames[state.currentPatch] || '').slice(0, 10);
   const nameHex = Array.from({ length: 10 }, (_, i) => (name.charCodeAt(i) || 0).toString(16).padStart(2, '0')).join('');
   const command = state.config.patch_commands.save_patch.command_template
@@ -1017,12 +1071,27 @@ function extractKnownParams() {
   }
 }
 
+// The effect-ID byte for each block lives at (declared offset + 7) -- the LAST byte of
+// its 8-byte stride, not the first -- and it's a single byte, not 4: verified via a live
+// raw-byte dump against Valeton Suite's own display (dly byte 0x0b -> Suite showed "Pure";
+// rvb byte 0x0c -> Suite showed "Room"). ble_sysex.json keys are 8-hex-char strings whose
+// only non-zero byte is this one, so pad it out to match. Reading straight from `start`
+// (the old behavior) always landed on 0x00, silently falling back to whichever effect has
+// id 0 for that block -- which is why an effect-type change never appeared to "stick" on
+// reload even though it was actually saved correctly on the device the whole time.
+// The per-block 8-byte stride in patch_data part 2 holds the distinguishing effect byte
+// at (start+1), not at `start` itself -- verified by dumping the full raw packet and
+// searching for the byte value Valeton Suite confirmed as ground truth (Church reverb's
+// key "0200000c" -> distinguishing byte 0x02): it appears exactly once inside rvb's own
+// 8-byte region, at start+1. byte(start+7) is a constant "family" marker shared by every
+// effect in that block (0x0c for every reverb, 0x0b for every delay, etc.) -- reading
+// that instead (the previous, wrong assumption) always decoded to whichever effect in
+// the family has distinguishing byte 0, regardless of what's actually live on the device.
 function readEffectIdHex(bytes, start) {
-  let id = '';
-  for (let i = 0; i < 8; i++) {
-    if (bytes[start + i] !== undefined) id += bytes[start + i].toString(16).padStart(2, '0');
-  }
-  return id;
+  const distinguishing = bytes[start + 1];
+  const marker = bytes[start + 7];
+  if (distinguishing === undefined || marker === undefined) return '';
+  return distinguishing.toString(16).padStart(2, '0') + '0000' + marker.toString(16).padStart(2, '0');
 }
 
 function parsePatchNames(bytes) {
