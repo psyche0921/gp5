@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041605';
+const BUILD_VERSION = '2609041609';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1153,6 +1153,8 @@ function parsePatchData1(bytes) {
   // and doesn't need this. Previously pre's effectId was never read, so its effect type
   // always looked unset/reverted after a save+reload even though it was saved correctly.
   applyEffectIdAt(bytes, 'pre', 203);
+  console.log(`[parsePatchData1] pre effectId=${state.blocks.pre.effectId} effect=${state.blocks.pre.effect} effectName=${state.blocks.pre.effectName}`);
+  refreshPedal('pre');
 }
 
 function parsePatchData2(bytes) {
