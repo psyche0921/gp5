@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041515';
+const BUILD_VERSION = '2609041519';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1185,9 +1185,12 @@ function extractBlockParams(name, buf, base) {
       }
     });
   } else {
-    // Fallback: if we don't know the effect (old version, loading before effect decoded),
-    // read all 8 slots sequentially as a safe default.
-    console.warn(`[extractBlockParams] No effect found for ${name} | effectHex=${effectHex} | config=${!!state.config} | block=${!!block} | effect=${!!effect}`);
+    // Fallback: if we don't know the effect, read all 8 slots sequentially.
+    // This is expected for: nr/pre (no effectId in patch data), cab (special block),
+    // or when effect JSON is unavailable. Only log if this seems unexpected.
+    if (effectHex !== undefined && block && !effect) {
+      console.warn(`[extractBlockParams] Effect not in JSON: ${name} effectHex=${effectHex}`);
+    }
     for (let p = 0; p < 8; p++) {
       const off = base + p * 4;
       if (off < 0 || off + 4 > buf.length) continue;
