@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041449';
+const BUILD_VERSION = '2609041453';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -130,7 +130,14 @@ function bindStaticEvents() {
   els.patchListClose.addEventListener('click', closePatchList);
   els.tunerBtn.addEventListener('click', toggleTuner);
   els.savePatchBtn.addEventListener('click', savePatch);
-  els.buildVersion.addEventListener('click', () => window.location.reload(true));
+  els.buildVersion.addEventListener('click', async () => {
+    // Unregister service worker to bypass its cache, then reload with cache-busting query string
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) await reg.unregister();
+    }
+    window.location.href = window.location.pathname + '?t=' + Date.now();
+  });
   els.masterVol.addEventListener('input', onMasterVolInput);
   els.drawerClose.addEventListener('click', closeDrawer);
   els.scrim.addEventListener('click', () => { closeDrawer(); closePatchList(); });
