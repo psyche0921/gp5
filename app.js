@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041519';
+const BUILD_VERSION = '2609041521';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -951,16 +951,19 @@ async function sendParamChange(block, paramIndex, value) {
   if (state.transport === 'usb') return; // not supported over CC map
   await waitForEffectChangeSettle();
 
+  console.log(`[sendParamChange] ${block.name} param[${paramIndex}] = ${value}`);
   const floatHex = floatToHexLE(value).join('');
   const command = state.config.block_commands.change_parameter.command_template
     .replace('{BLOCK}', block.id.toString(16).padStart(2, '0'))
     .replace('{PARAM_NUM}', paramIndex.toString(16).padStart(2, '0'))
     .replace('{VALUE_FLOAT_HEX}', floatHex);
+  console.log(`[sendParamChange] sending: block=${block.id.toString(16).padStart(2, '0')} param=${paramIndex.toString(16).padStart(2, '0')} hex=${floatHex}`);
   sendSysex(buildSysexCommand(command));
 
   state.blocks[block.name] = state.blocks[block.name] || {};
   state.blocks[block.name].parameters = state.blocks[block.name].parameters || [];
   state.blocks[block.name].parameters[paramIndex] = value;
+  console.log(`[sendParamChange] cache updated: param[${paramIndex}] = ${value}`);
 }
 
 async function selectPatch(num) {
