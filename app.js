@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041524';
+const BUILD_VERSION = '2609041551';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1171,9 +1171,15 @@ function readFloat32LE(buf, offset) {
 // blocks live in different patch_data parts:
 //   - part1 (100 decoded bytes): nr at offset 36, pre at offset 68 (i.e. 36 + blockIndex*32,
 //     for blockIndex 0-1)
-//   - part2+part3 concatenated (200 bytes): dst..rvb (blockIndex 2-8), offset =
-//     (blockIndex - 2) * 32 + paramIndex * 4
-//   - part4 (68 decoded bytes): ns (NAM), offset = 24 + paramIndex * 4
+//   - part2+part3+part4[0:24] concatenated (224 bytes): dst..rvb (blockIndex 2-8), offset =
+//     (blockIndex - 2) * 32 + paramIndex * 4. dst..dly (blockIndex 2-7) fit entirely inside
+//     part2+part3 (200 bytes), but rvb (blockIndex 8, base 192) needs offsets up to 223 for
+//     its 8 slots, so its params from index 2 onward spill into the first 24 bytes of part4 --
+//     confirmed via a captured Suite save+reload: rvb's Decay (param index 2), just written
+//     via change_parameter, read back byte-identical at part4 offset 0, not anywhere in
+//     part2+part3. Reading only part2+part3 (the original assumption) silently left rvb's
+//     Decay/Trail undefined, which is why a saved Decay value appeared to not persist.
+//   - part4 (68 decoded bytes) offset 24 onward: ns (NAM), offset = 24 + paramIndex * 4
 function extractBlockParams(name, buf, base) {
   const bState = state.blocks[name] = state.blocks[name] || {};
   const block = state.config.blocks.find((b) => b.name === name);
@@ -1219,7 +1225,10 @@ function extractKnownParams() {
     extractBlockParams('pre', part1, 36 + 1 * 32);
   }
   if (part2 && part3) {
-    const buf = part2.concat(part3);
+    // rvb's tail (params index 2+) lives in part4[0:24] -- see extractBlockParams'
+    // comment above. Append it when part4 has already arrived; otherwise rvb's later
+    // slots are simply left unset until part4 shows up and this re-runs.
+    const buf = part2.concat(part3).concat(part4 ? part4.slice(0, 24) : []);
     ['dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb'].forEach((name) => {
       const blockIdx = BLOCK_ORDER.indexOf(name);
       extractBlockParams(name, buf, (blockIdx - 2) * 32);
