@@ -573,6 +573,13 @@ select { font-family: inherit; }
   min-width: 2.4em; text-align: center;
 }
 
+/* Binary params (Trail, +3dB, Bright, Mode, ...) get a toggle switch instead of a knob;
+   the fixed height matches the knob's footprint so it doesn't collapse the grid row. */
+.toggle-param-wrap { justify-content: center; min-height: 5.2rem; }
+.toggle-param-switch { width: 3.4rem; height: 1.9rem; }
+.toggle-param-switch .switch-track::before { width: 1.35rem; height: 1.35rem; }
+.toggle-param-switch input:checked + .switch-track::before { transform: translateX(1.45rem); }
+
 /* ---------- Patch list modal ---------- */
 .patch-modal {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -48%) scale(0.96);

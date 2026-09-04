@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041641';
+const BUILD_VERSION = '2609041649';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -379,8 +379,12 @@ function openDrawer(block, keepEffect = true) {
   // device-side parameter slot.
   params.forEach((param) => {
     const algId = param.index;
-    const value = keepEffect ? (bState.parameters?.[algId] ?? param.default) : Math.round((param.min + param.max) / 2);
-    els.drawerKnobs.appendChild(buildKnob(block, param, algId, value, isBluetooth));
+    const isToggle = param.min === 0 && param.max === 1;
+    const value = keepEffect
+      ? (bState.parameters?.[algId] ?? param.default)
+      : (isToggle ? param.default : Math.round((param.min + param.max) / 2));
+    const build = isToggle ? buildToggleParam : buildKnob;
+    els.drawerKnobs.appendChild(build(block, param, algId, value, isBluetooth));
   });
 
   els.drawer.classList.add('open');
@@ -405,6 +409,36 @@ function findEffectData(block, bState) {
 // just show the equivalent BPM (60000 / ms) as a convenience readout.
 function msToBpmLabel(ms) {
   return ms > 0 ? `${Math.round(60000 / ms)} BPM` : '-- BPM';
+}
+
+// Binary params (min=0, max=1 -- e.g. Boost's +3dB/Bright, delay/reverb Trail, Toucher's
+// Mode) are on/off switches on the real device, not continuous controls, so they get a
+// toggle instead of a rotary knob.
+function buildToggleParam(block, param, index, value, enabled) {
+  const wrap = document.createElement('div');
+  wrap.className = 'knob-wrap toggle-param-wrap';
+  const isOn = Math.round(value) >= 1;
+
+  wrap.innerHTML = `
+    <label class="switch toggle-param-switch">
+      <input type="checkbox" ${isOn ? 'checked' : ''} ${enabled ? '' : 'disabled'}>
+      <span class="switch-track"></span>
+    </label>
+    <div class="knob-name">${param.name}</div>
+    <div class="knob-value">${isOn ? 'ON' : 'OFF'}</div>
+  `;
+
+  if (!enabled) return wrap;
+
+  const input = wrap.querySelector('input');
+  const valueEl = wrap.querySelector('.knob-value');
+  input.addEventListener('change', () => {
+    const v = input.checked ? 1 : 0;
+    valueEl.textContent = input.checked ? 'ON' : 'OFF';
+    sendParamChange(block, index, v);
+  });
+
+  return wrap;
 }
 
 function buildKnob(block, param, index, value, enabled) {
