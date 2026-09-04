@@ -31,6 +31,7 @@
     </button>
     <button id="fullscreenBtn" class="icon-btn" title="전체화면"></button>
     <button id="midiLogToggle" class="log-toggle" title="Bluetooth/USB로 들어오는 신호를 원본 그대로 확인">신호 로그</button>
+    <button id="consoleLogToggle" class="log-toggle" title="JavaScript 콘솔 메시지 확인 (디버깅용)">콘솔 로그</button>
   </div>
 </header>
 
@@ -106,6 +107,20 @@
   </div>
   <div class="midi-log-body" id="midiLogBody">
     <p class="midi-log-empty">연결(Bluetooth 또는 USB) 후 GP5/페달 버튼을 누르면 여기에 원본 신호가 그대로 찍힙니다. 아무것도 안 찍히면 GP5가 그 이벤트를 이 연결로 전혀 보내지 않는다는 뜻입니다.</p>
+  </div>
+</div>
+
+<!-- Console log viewer (for debugging) -->
+<div class="midi-log" id="consoleLog">
+  <div class="midi-log-head">
+    <h2>콘솔 로그</h2>
+    <div class="midi-log-actions">
+      <button id="consoleLogClear" class="log-clear-btn">CLEAR</button>
+      <button id="consoleLogClose" class="drawer-close">×</button>
+    </div>
+  </div>
+  <div class="midi-log-body" id="consoleLogBody">
+    <p class="midi-log-empty">JavaScript 콘솔 메시지가 여기에 나타납니다.</p>
   </div>
 </div>
 

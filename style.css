@@ -167,6 +167,24 @@ select { font-family: inherit; }
 .midi-log-bytes { color: var(--text); flex: 0 0 auto; }
 .midi-log-decoded { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
 
+/* ---------- Console log viewer ---------- */
+.log-row {
+  display: flex; gap: 0.8rem; padding: 0.3rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  white-space: pre-wrap; word-break: break-word;
+}
+.log-time { color: #5c5674; flex: 0 0 auto; font-family: 'Consolas', monospace; font-size: 0.8rem; }
+.log-level { flex: 0 0 auto; font-weight: 700; font-family: 'Consolas', monospace; font-size: 0.8rem; }
+.log-msg { flex: 1; overflow-wrap: break-word; font-family: 'Consolas', monospace; font-size: 0.8rem; }
+.log-log { color: var(--text); }
+.log-log .log-level { color: #5c5674; }
+.log-info { color: var(--accent-2); }
+.log-info .log-level { color: var(--accent-2); }
+.log-warn { color: #ffce3d; }
+.log-warn .log-level { color: #ffce3d; }
+.log-error { color: var(--danger); }
+.log-error .log-level { color: var(--danger); }
+
 /* ---------- Patch strip ---------- */
 .patch-strip {
   flex: 0 0 auto;

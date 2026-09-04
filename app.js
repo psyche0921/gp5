@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041455';
+const BUILD_VERSION = '2609041459';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -46,10 +46,12 @@ const state = {
   patchPollTimer: null,
   patchDataLoaded: false,
   blinkEpoch: 0,            // performance.now() reference the idle pedal-blink animation is synced against
+  consoleLogs: [],          // array of { time, level, message }
 };
 
 const $ = (sel) => document.querySelector(sel);
 const els = {};
+const escapeHtml = (str) => String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]));
 
 window.addEventListener('DOMContentLoaded', init);
 
@@ -76,6 +78,24 @@ async function init() {
   state.blinkEpoch = performance.now();
   buildPedalboard();
   setStatus('연결을 기다리는 중...');
+
+  // Hijack console methods to capture logs for UI display
+  const originalLog = console.log;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const originalInfo = console.info;
+
+  const captureLog = (level, args) => {
+    const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    const time = new Date().toLocaleTimeString('ko-KR');
+    state.consoleLogs.push({ time, level, message: msg });
+    if (state.consoleLogs.length > 500) state.consoleLogs.shift(); // Keep last 500 logs
+  };
+
+  console.log = function(...args) { originalLog(...args); captureLog('log', args); };
+  console.warn = function(...args) { originalWarn(...args); captureLog('warn', args); };
+  console.error = function(...args) { originalError(...args); captureLog('error', args); };
+  console.info = function(...args) { originalInfo(...args); captureLog('info', args); };
 }
 
 function cacheEls() {
@@ -119,6 +139,11 @@ function cacheEls() {
   els.midiLogBody = $('#midiLogBody');
   els.midiLogClear = $('#midiLogClear');
   els.midiLogClose = $('#midiLogClose');
+  els.consoleLogToggle = $('#consoleLogToggle');
+  els.consoleLog = $('#consoleLog');
+  els.consoleLogBody = $('#consoleLogBody');
+  els.consoleLogClear = $('#consoleLogClear');
+  els.consoleLogClose = $('#consoleLogClose');
 }
 
 function bindStaticEvents() {
@@ -155,6 +180,15 @@ function bindStaticEvents() {
   });
   els.midiLogClose.addEventListener('click', closeMidiLog);
   els.midiLogClear.addEventListener('click', () => { els.midiLogBody.innerHTML = ''; });
+  els.consoleLogToggle.addEventListener('click', () => {
+    if (els.consoleLog.classList.contains('show')) closeConsoleLog();
+    else openConsoleLog();
+  });
+  els.consoleLogClose.addEventListener('click', closeConsoleLog);
+  els.consoleLogClear.addEventListener('click', () => {
+    state.consoleLogs = [];
+    els.consoleLogBody.innerHTML = '';
+  });
 }
 
 const ICON_FS_ENTER = `<svg viewBox="0 0 100 100"><path d="M12,34 V12 H34 M66,12 H88 V34 M88,66 V88 H66 M34,88 H12 V66" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -720,6 +754,36 @@ function closeMidiLog() {
   els.midiLog.classList.remove('show');
   els.midiLogToggle.classList.remove('active');
   els.midiLogBody.innerHTML = '<p class="midi-log-empty">연결(Bluetooth 또는 USB) 후 GP5/페달 버튼을 누르면 여기에 원본 신호가 그대로 찍힙니다. 아무것도 안 찍히면 GP5가 그 이벤트를 이 연결로 전혀 보내지 않는다는 뜻입니다.</p>';
+}
+
+function openConsoleLog() {
+  els.consoleLog.classList.add('show');
+  els.consoleLogToggle.classList.add('active');
+  refreshConsoleLogDisplay();
+}
+
+function closeConsoleLog() {
+  els.consoleLog.classList.remove('show');
+  els.consoleLogToggle.classList.remove('active');
+}
+
+function appendConsoleLogRow(time, level, message) {
+  const row = document.createElement('div');
+  row.className = `log-row log-${level}`;
+  row.innerHTML = `<span class="log-time">${time}</span><span class="log-level">[${level.toUpperCase()}]</span><span class="log-msg">${escapeHtml(message)}</span>`;
+  els.consoleLogBody.appendChild(row);
+  els.consoleLogBody.scrollTop = els.consoleLogBody.scrollHeight;
+}
+
+function refreshConsoleLogDisplay() {
+  els.consoleLogBody.innerHTML = '';
+  if (state.consoleLogs.length === 0) {
+    els.consoleLogBody.innerHTML = '<p class="midi-log-empty">아직 로그 메시지가 없습니다.</p>';
+  } else {
+    state.consoleLogs.forEach(log => {
+      appendConsoleLogRow(log.time, log.level, log.message);
+    });
+  }
 }
 
 // Only record while the panel is actually open — GP5 sends a steady stream of
