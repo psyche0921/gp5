@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041649';
+const BUILD_VERSION = '2609041658';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -354,7 +354,12 @@ function openDrawer(block, keepEffect = true) {
   els.drawerEffectSelect.onchange = () => {
     const effHex = els.drawerEffectSelect.value;
     sendBlockEffectChange(block, effHex);
-    setTimeout(() => openDrawer(block, false), 150);
+    // Only the parameter list changes when the effect type changes -- re-running the
+    // whole openDrawer() here used to also tear down and rebuild the <select> itself
+    // (innerHTML = '', re-append every <option>) at the exact moment the browser was
+    // closing the dropdown from the user's own tap, which is what caused the flicker.
+    // Rebuilding just the knobs/toggles leaves the select element alone.
+    setTimeout(() => renderDrawerParams(block, false), 150);
   };
 
   // On/off toggle
@@ -365,7 +370,15 @@ function openDrawer(block, keepEffect = true) {
     sendBlockToggle(block, els.drawerToggle.checked);
   };
 
-  // Parameters -> knobs
+  renderDrawerParams(block, keepEffect);
+
+  els.drawer.classList.add('open');
+  els.scrim.classList.add('show');
+}
+
+function renderDrawerParams(block, keepEffect) {
+  const bState = state.blocks[block.name] || {};
+  const isBluetooth = state.transport === 'bluetooth';
   const effData = findEffectData(block, bState);
   const params = effData?.parameters || block.parameters || [];
   els.drawerKnobs.innerHTML = '';
@@ -386,9 +399,6 @@ function openDrawer(block, keepEffect = true) {
     const build = isToggle ? buildToggleParam : buildKnob;
     els.drawerKnobs.appendChild(build(block, param, algId, value, isBluetooth));
   });
-
-  els.drawer.classList.add('open');
-  els.scrim.classList.add('show');
 }
 
 function closeDrawer() {
