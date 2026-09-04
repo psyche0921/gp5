@@ -1040,11 +1040,30 @@ function readFloat32LE(buf, offset) {
 //   - part4 (68 decoded bytes): ns (NAM), offset = 24 + paramIndex * 4
 function extractBlockParams(name, buf, base) {
   const bState = state.blocks[name] = state.blocks[name] || {};
+  const block = state.config.blocks.find((b) => b.name === name);
+  const effectHex = bState.effectId;
+  const effect = block?.effects?.[effectHex];
   const params = [];
-  for (let p = 0; p < 8; p++) {
-    const off = base + p * 4;
-    if (off < 0 || off + 4 > buf.length) continue;
-    params[p] = readFloat32LE(buf, off);
+
+  if (effect?.parameters) {
+    // JSON's parameter indices may skip slots (e.g. Room reverb: Mix=0, Decay=2, Trail=3).
+    // Use param.index to place each value into the correct slot so that later when
+    // sendParamChange uses param.index to address the device, it finds the right cached value.
+    effect.parameters.forEach((param) => {
+      const algId = param.index;
+      const off = base + algId * 4;
+      if (off >= 0 && off + 4 <= buf.length) {
+        params[algId] = readFloat32LE(buf, off);
+      }
+    });
+  } else {
+    // Fallback: if we don't know the effect (old version, loading before effect decoded),
+    // read all 8 slots sequentially as a safe default.
+    for (let p = 0; p < 8; p++) {
+      const off = base + p * 4;
+      if (off < 0 || off + 4 > buf.length) continue;
+      params[p] = readFloat32LE(buf, off);
+    }
   }
   bState.parameters = params;
 }
