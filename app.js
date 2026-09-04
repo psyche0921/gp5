@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609041453';
+const BUILD_VERSION = '2609041455';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -131,12 +131,20 @@ function bindStaticEvents() {
   els.tunerBtn.addEventListener('click', toggleTuner);
   els.savePatchBtn.addEventListener('click', savePatch);
   els.buildVersion.addEventListener('click', async () => {
-    // Unregister service worker to bypass its cache, then reload with cache-busting query string
+    // Unregister service worker and clear all caches, then force reload
     if ('serviceWorker' in navigator) {
       const registrations = await navigator.serviceWorker.getRegistrations();
-      for (const reg of registrations) await reg.unregister();
+      for (const reg of registrations) {
+        await reg.unregister();
+      }
     }
-    window.location.href = window.location.pathname + '?t=' + Date.now();
+    // Clear all caches to force fresh fetch
+    if ('caches' in window) {
+      const names = await caches.keys();
+      await Promise.all(names.map(name => caches.delete(name)));
+    }
+    // Force hard reload with cache bust
+    window.location.href = window.location.href.split('?')[0] + '?nocache=' + Date.now();
   });
   els.masterVol.addEventListener('input', onMasterVolInput);
   els.drawerClose.addEventListener('click', closeDrawer);
