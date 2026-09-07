@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609042227';
+const BUILD_VERSION = '2609071008';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1125,9 +1125,18 @@ function handleBleNotification(event) {
       setTimeout(() => sendSysex(state.config.sync_commands.request_patch_data.sysex), 100);
     }
   } else if (bytes[5] === 0 && bytes[6] === 5 && bytes.length === 212) {
-    if (bytes[7] === 0 && bytes[8] === 0) parsePatchData1(bytes);
-    else if (bytes[7] === 0 && bytes[8] === 1) parsePatchData2(bytes);
-    if (bytes[7] === 0 && bytes[8] >= 0 && bytes[8] <= 3) {
+    // patch_data parts: 0=pre/nr, 1=dst through dly, 2-3=more of dst through rvb,
+    // 4=ns and rvb tail. parsePatchData1 and parsePatchData2 handle effect IDs and
+    // block-enabled status from parts 0 and 1; extractKnownParams extracts parameter
+    // values from parts 1-4. Only call extractKnownParams on parts 1-3 (not part 0,
+    // since no parameter data there yet), to avoid redundant extractions.
+    if (bytes[7] === 0 && bytes[8] === 0) {
+      parsePatchData1(bytes);
+    } else if (bytes[7] === 0 && bytes[8] === 1) {
+      parsePatchData2(bytes);
+      state.patchDataChunks[1] = decodePatchDataChunk(bytes);
+      extractKnownParams();
+    } else if (bytes[7] === 0 && bytes[8] >= 2 && bytes[8] <= 3) {
       state.patchDataChunks[bytes[8]] = decodePatchDataChunk(bytes);
       extractKnownParams();
     }
