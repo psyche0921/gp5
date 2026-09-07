@@ -99,6 +99,25 @@
   <div class="patch-modal-body" id="patchListBody"></div>
 </div>
 
+<!-- Save-as modal -->
+<div class="patch-modal save-modal" id="saveModal">
+  <div class="patch-modal-head">
+    <h2>SAVE PATCH</h2>
+    <button id="saveModalClose" class="drawer-close">×</button>
+  </div>
+  <div class="patch-modal-body save-modal-body">
+    <div class="field">
+      <label class="field-label">PATCH NUMBER</label>
+      <input type="number" id="saveModalNum" class="save-modal-input" min="0" max="99" inputmode="numeric">
+    </div>
+    <div class="field">
+      <label class="field-label">PATCH NAME</label>
+      <input type="text" id="saveModalName" class="save-modal-input" maxlength="10">
+    </div>
+    <button id="saveModalConfirm" class="save-btn save-modal-confirm">💾 SAVE</button>
+  </div>
+</div>
+
 <!-- Raw MIDI monitor (for diagnosing pedals/controllers GP5 doesn't echo) -->
 <div class="midi-log" id="midiLog">
   <div class="midi-log-head">

@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609071035';
+const BUILD_VERSION = '2609071048';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -126,6 +126,11 @@ function cacheEls() {
   els.patchListClose = $('#patchListClose');
   els.tunerBtn = $('#tunerBtn');
   els.savePatchBtn = $('#savePatchBtn');
+  els.saveModal = $('#saveModal');
+  els.saveModalClose = $('#saveModalClose');
+  els.saveModalNum = $('#saveModalNum');
+  els.saveModalName = $('#saveModalName');
+  els.saveModalConfirm = $('#saveModalConfirm');
   els.masterVolWrap = $('#masterVolWrap');
   els.masterVol = $('#masterVol');
   els.masterVolValue = $('#masterVolValue');
@@ -162,7 +167,15 @@ function bindStaticEvents() {
   els.patchOpenList.addEventListener('click', openPatchList);
   els.patchListClose.addEventListener('click', closePatchList);
   els.tunerBtn.addEventListener('click', toggleTuner);
-  els.savePatchBtn.addEventListener('click', savePatch);
+  els.savePatchBtn.addEventListener('click', openSaveModal);
+  els.saveModalClose.addEventListener('click', closeSaveModal);
+  els.saveModalConfirm.addEventListener('click', confirmSavePatch);
+  [els.saveModalNum, els.saveModalName].forEach((input) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') confirmSavePatch();
+      else if (e.key === 'Escape') closeSaveModal();
+    });
+  });
   els.buildVersion.addEventListener('click', async () => {
     // Unregister service worker and clear all caches, then force reload
     if ('serviceWorker' in navigator) {
@@ -181,7 +194,7 @@ function bindStaticEvents() {
   });
   els.masterVol.addEventListener('input', onMasterVolInput);
   els.drawerClose.addEventListener('click', closeDrawer);
-  els.scrim.addEventListener('click', () => { closeDrawer(); closePatchList(); });
+  els.scrim.addEventListener('click', () => { closeDrawer(); closePatchList(); closeSaveModal(); });
   els.midiLogToggle.addEventListener('click', () => {
     if (els.midiLog.classList.contains('show')) closeMidiLog();
     else openMidiLog();
@@ -1116,40 +1129,85 @@ async function selectPatch(num) {
   await sendSysex(state.config.sync_commands.request_patch_data.sysex);
 }
 
-// Commits the current live edits to the active patch slot on GP5. There's no
-// documented SysEx command for this — it was reverse-engineered from a BLE HCI snoop
-// capture of Valeton Suite's own Save action (patch number + a 10-byte, zero-padded
-// ASCII name field), since GP5 otherwise discards parameter/effect edits on patch
-// change or power-off.
-async function savePatch() {
+function patchTotal() {
+  return state.transport === 'bluetooth' ? Math.max(state.patchNames.length, 1) : 100;
+}
+
+// Valeton Suite lets you save the current live edits to any patch slot under any name
+// (not just overwrite the active one), and jumps you to that slot afterward. Pre-fill
+// the modal with the active patch's number/name so a plain confirm behaves like the
+// old one-click save.
+function openSaveModal() {
   if (state.transport !== 'bluetooth' || !state.bleChar) return;
-  await waitForEffectChangeSettle();
+  els.saveModalNum.value = state.currentPatch;
+  els.saveModalNum.max = patchTotal() - 1;
+  els.saveModalName.value = state.patchNames[state.currentPatch] || '';
+  els.saveModal.classList.add('show');
+  els.scrim.classList.add('show');
+  els.saveModalName.focus();
+  els.saveModalName.select();
+}
 
-  console.log(`[savePatch] Saving patch ${state.currentPatch}`);
-  console.log(`[savePatch] Current blocks state:`, JSON.stringify(Object.entries(state.blocks).map(([name, block]) => ({ name, params: block.parameters?.slice(0, 8) }))));
+function closeSaveModal() {
+  els.saveModal.classList.remove('show');
+  els.scrim.classList.remove('show');
+}
 
-  const name = (state.patchNames[state.currentPatch] || '').slice(0, 10);
+// Commits the current live edits to a patch slot on GP5. There's no documented SysEx
+// command for this — it was reverse-engineered from a BLE HCI snoop capture of Valeton
+// Suite's own Save action (patch number + a 10-byte, zero-padded ASCII name field),
+// since GP5 otherwise discards parameter/effect edits on patch change or power-off.
+async function writePatchToDevice(num, name) {
   const nameHex = Array.from({ length: 10 }, (_, i) => (name.charCodeAt(i) || 0).toString(16).padStart(2, '0')).join('');
   const command = state.config.patch_commands.save_patch.command_template
-    .replace('{PATCH}', state.currentPatch.toString(16).padStart(2, '0'))
+    .replace('{PATCH}', num.toString(16).padStart(2, '0'))
     .replace('{NAME}', nameHex);
-
-  els.savePatchBtn.disabled = true;
-  setConnecting(true, '패치 저장하는 중...');
   await sendSysex(buildSysexCommand(command));
   await sleep(150);
+}
+
+async function confirmSavePatch() {
+  if (state.transport !== 'bluetooth' || !state.bleChar) return;
+
+  const total = patchTotal();
+  const parsedNum = parseInt(els.saveModalNum.value, 10);
+  const targetNum = Number.isFinite(parsedNum) ? Math.min(Math.max(parsedNum, 0), total - 1) : state.currentPatch;
+  const targetName = els.saveModalName.value.slice(0, 10);
+  const originalPatch = state.currentPatch;
+
+  await waitForEffectChangeSettle();
+
+  console.log(`[savePatch] Saving current live edits to patch ${targetNum} as "${targetName}"`);
+  console.log(`[savePatch] Current blocks state:`, JSON.stringify(Object.entries(state.blocks).map(([name, block]) => ({ name, params: block.parameters?.slice(0, 8) }))));
+
+  els.saveModalConfirm.disabled = true;
+  els.savePatchBtn.disabled = true;
+  setConnecting(true, '패치 저장하는 중...');
+
+  await writePatchToDevice(targetNum, targetName);
+  state.patchNames[targetNum] = targetName;
+
+  if (targetNum !== originalPatch) {
+    // Reload from the slot we just wrote so the main screen reflects it as the active patch.
+    await selectPatch(targetNum);
+  } else {
+    updatePatchDisplay();
+  }
+
   setConnecting(false);
+  els.saveModalConfirm.disabled = false;
   els.savePatchBtn.disabled = false;
+  closeSaveModal();
 
   console.log(`[savePatch] Save command sent`);
   els.savePatchBtn.classList.add('saved');
   setTimeout(() => els.savePatchBtn.classList.remove('saved'), 1200);
-  showToast(`패치 ${state.currentPatch} "${name || '(이름 없음)'}" 저장 완료`);
-  setStatus(`패치 ${state.currentPatch} 저장 완료`);
+  showToast(`패치 ${targetNum} "${targetName || '(이름 없음)'}" 저장 완료`);
+  setStatus(`패치 ${targetNum} 저장 완료`);
 }
 
 function navigatePatch(dir) {
-  const total = state.transport === 'bluetooth' ? Math.max(state.patchNames.length, 1) : 100;
+  const total = patchTotal();
   const next = ((state.currentPatch + dir) % total + total) % total;
   selectPatch(next);
 }

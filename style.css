@@ -642,6 +642,21 @@ select { font-family: inherit; }
 }
 .patch-row.current .patch-row-num { color: var(--accent-2); }
 
+/* ---------- Save-as modal ---------- */
+.save-modal-body { display: flex; flex-direction: column; gap: 1.1rem; }
+.save-modal-input {
+  width: 100%;
+  background: #0a0812;
+  border: 3px solid var(--line);
+  color: var(--text);
+  padding: 0.7rem 0.9rem;
+  border-radius: 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.save-modal-input:focus { outline: none; border-color: var(--accent-2); }
+.save-modal-confirm { align-self: stretch; padding: 0.8rem; font-size: 0.95rem; }
+
 /* ---------- Narrow / portrait fallback ---------- */
 @media (max-width: 820px), (max-height: 480px) {
   .pedalboard { grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(2, 1fr); gap: 0.5rem; padding: 0.3rem 0.6rem 0.6rem; }
