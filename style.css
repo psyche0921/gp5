@@ -437,7 +437,7 @@ select { font-family: inherit; }
 
 /* ---------- Scrim ---------- */
 .scrim {
-  position: fixed; inset: 0; background: rgba(4,3,8,0.6); backdrop-filter: blur(3px);
+  position: fixed; inset: 0; background: rgba(4,3,8,0.75);
   opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 40;
 }
 .scrim.show { opacity: 1; pointer-events: auto; }
