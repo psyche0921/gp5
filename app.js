@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609071017';
+const BUILD_VERSION = '2609071027';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -128,7 +128,7 @@ function cacheEls() {
   els.drawer = $('#drawer');
   els.drawerTitle = $('#drawerTitle');
   els.drawerClose = $('#drawerClose');
-  els.drawerEffectSelect = $('#drawerEffectSelect');
+  els.drawerEffectSelect = createDropdown($('#drawerEffectSelect'));
   els.drawerToggle = $('#drawerToggle');
   els.drawerToggleLabel = $('#drawerToggleLabel');
   els.drawerKnobs = $('#drawerKnobs');
@@ -326,6 +326,92 @@ function setControlsEnabled(enabled) {
 
 /* ==================== Drawer (effect editor) ==================== */
 
+// A hand-rolled dropdown, not a native <select>. Opening/closing a native <select> on
+// Android Chrome/WebView triggers a full-screen WebView surface swap for the OS popup,
+// which shows up as a whole-page flash -- CSS tweaks (removing backdrop-filter, etc.)
+// don't touch that, only avoiding the native popup does.
+function createDropdown(triggerEl) {
+  const valueEl = triggerEl.querySelector('.custom-select-value');
+  let options = [];
+  let selectedValue = null;
+  let onChangeCb = null;
+  let closeMenu = null;
+
+  function renderValue() {
+    const opt = options.find((o) => o.value === selectedValue);
+    valueEl.textContent = opt ? opt.label : '';
+  }
+
+  function open() {
+    if (triggerEl.disabled || !options.length || closeMenu) return;
+    const menu = document.createElement('div');
+    menu.className = 'custom-select-menu';
+    options.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'custom-select-option' + (opt.value === selectedValue ? ' selected' : '');
+      btn.textContent = opt.label;
+      btn.addEventListener('click', () => {
+        selectedValue = opt.value;
+        renderValue();
+        close();
+        if (onChangeCb) onChangeCb(selectedValue);
+      });
+      menu.appendChild(btn);
+    });
+    document.body.appendChild(menu);
+
+    const rect = triggerEl.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    const openUp = spaceBelow < 120 && spaceAbove > spaceBelow;
+    menu.style.left = `${rect.left}px`;
+    menu.style.width = `${rect.width}px`;
+    menu.style.maxHeight = `${Math.max(Math.min(256, openUp ? spaceAbove : spaceBelow), 80)}px`;
+    if (openUp) {
+      menu.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+    } else {
+      menu.style.top = `${rect.bottom + 6}px`;
+    }
+    triggerEl.classList.add('open');
+
+    const onOutside = (e) => { if (!menu.contains(e.target) && e.target !== triggerEl) close(); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('pointerdown', onOutside, true);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close, true);
+
+    closeMenu = () => {
+      menu.remove();
+      triggerEl.classList.remove('open');
+      document.removeEventListener('pointerdown', onOutside, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close, true);
+      closeMenu = null;
+    };
+  }
+
+  function close() { if (closeMenu) closeMenu(); }
+
+  triggerEl.addEventListener('click', () => { if (closeMenu) close(); else open(); });
+
+  return {
+    setOptions(newOptions, newSelectedValue) {
+      close();
+      options = newOptions;
+      selectedValue = newSelectedValue ?? (options[0]?.value ?? null);
+      renderValue();
+    },
+    close,
+    get value() { return selectedValue; },
+    set disabled(v) { triggerEl.disabled = v; if (v) close(); },
+    get disabled() { return triggerEl.disabled; },
+    set onchange(fn) { onChangeCb = fn; },
+  };
+}
+
 function openDrawer(block, keepEffect = true) {
   state.activeBlock = block;
   els.drawerTitle.innerHTML = `<span class="drawer-title-icon">${ICONS[block.name] || ''}</span>${block.label}`;
@@ -336,29 +422,18 @@ function openDrawer(block, keepEffect = true) {
   const isBluetooth = state.transport === 'bluetooth';
 
   // Effect select
-  els.drawerEffectSelect.innerHTML = '';
-  if (effects.length) {
-    effects.forEach(([effHex, eff]) => {
-      const opt = document.createElement('option');
-      opt.value = effHex;
-      opt.textContent = eff.name;
-      if (bState.effectId === effHex || (!bState.effectId && eff.id === (bState.effect || 0))) opt.selected = true;
-      els.drawerEffectSelect.appendChild(opt);
-    });
-  } else {
-    const opt = document.createElement('option');
-    opt.textContent = block.note || '이 블록은 효과 목록이 고정되어 있지 않습니다';
-    els.drawerEffectSelect.appendChild(opt);
-  }
+  const effectOptions = effects.length
+    ? effects.map(([effHex, eff]) => ({ value: effHex, label: eff.name }))
+    : [{ value: '', label: block.note || '이 블록은 효과 목록이 고정되어 있지 않습니다' }];
+  const selectedEntry = effects.find(
+    ([effHex, eff]) => bState.effectId === effHex || (!bState.effectId && eff.id === (bState.effect || 0))
+  );
+  els.drawerEffectSelect.setOptions(effectOptions, selectedEntry?.[0] ?? effectOptions[0]?.value ?? null);
   els.drawerEffectSelect.disabled = !isBluetooth || effects.length === 0;
-  els.drawerEffectSelect.onchange = () => {
-    const effHex = els.drawerEffectSelect.value;
+  els.drawerEffectSelect.onchange = (effHex) => {
     sendBlockEffectChange(block, effHex);
-    // Only the parameter list changes when the effect type changes -- re-running the
-    // whole openDrawer() here used to also tear down and rebuild the <select> itself
-    // (innerHTML = '', re-append every <option>) at the exact moment the browser was
-    // closing the dropdown from the user's own tap, which is what caused the flicker.
-    // Rebuilding just the knobs/toggles leaves the select element alone.
+    // Only the parameter list changes when the effect type changes -- rebuilding just the
+    // knobs/toggles (not the whole drawer) avoids tearing down the dropdown mid-interaction.
     setTimeout(() => renderDrawerParams(block, false), 150);
   };
 
@@ -402,6 +477,7 @@ function renderDrawerParams(block, keepEffect) {
 }
 
 function closeDrawer() {
+  els.drawerEffectSelect.close();
   els.drawer.classList.remove('open');
   els.scrim.classList.remove('show');
 }

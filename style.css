@@ -402,14 +402,16 @@ select { font-family: inherit; }
 .connect-overlay {
   position: fixed; inset: 0;
   background: rgba(4,3,8,0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
   display: flex; align-items: center; justify-content: center;
   z-index: 100;
   opacity: 0; pointer-events: none;
   transition: opacity 0.2s ease;
 }
-.connect-overlay.show { opacity: 1; pointer-events: auto; }
+.connect-overlay.show {
+  opacity: 1; pointer-events: auto;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
 .connect-overlay-box {
   display: flex; flex-direction: column; align-items: center; gap: 1.1rem;
   width: min(20rem, 80vw);
@@ -493,6 +495,31 @@ select { font-family: inherit; }
   font-weight: 700;
 }
 .effect-select:disabled { opacity: 0.5; }
+
+.custom-select-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
+  cursor: pointer;
+}
+.custom-select-caret { color: var(--text-dim); font-size: 0.9rem; flex: 0 0 auto; transition: transform 0.15s; }
+.custom-select-trigger.open .custom-select-caret { transform: rotate(180deg); }
+
+.custom-select-menu {
+  position: fixed;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 3px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+  overflow-y: auto;
+  z-index: 200;
+  padding: 0.4rem;
+}
+.custom-select-option {
+  width: 100%; display: block; text-align: left;
+  background: transparent; border: none; color: var(--text);
+  padding: 0.65rem 0.7rem; border-radius: 8px; font-size: 1.05rem; font-weight: 700;
+}
+.custom-select-option:active { background: rgba(255,255,255,0.06); }
+.custom-select-option.selected { background: rgba(52, 226, 255, 0.12); color: var(--accent-2); }
 
 .toggle-field { display: flex; align-items: center; gap: 0.8rem; }
 .switch { position: relative; width: 3.8rem; height: 2.1rem; display: inline-block; }
