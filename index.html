@@ -18,10 +18,10 @@
     <span class="brand-sub">PEDALBOARD CONTROLLER</span>
   </div>
   <div class="conn-controls">
-    <select id="transportSelect" class="transport-select">
-      <option value="bluetooth" selected>Bluetooth</option>
-      <option value="usb">USB MIDI</option>
-    </select>
+    <button type="button" id="transportSelect" class="transport-select custom-select-trigger">
+      <span class="custom-select-value">Bluetooth</span>
+      <span class="custom-select-caret" aria-hidden="true">&#9662;</span>
+    </button>
     <button id="connectBtn" class="connect-btn">
       <span id="connLed" class="led"></span>
       <span id="connLabel">Connect</span>

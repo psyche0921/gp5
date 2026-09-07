@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609071027';
+const BUILD_VERSION = '2609071034';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -103,7 +103,11 @@ async function init() {
 
 function cacheEls() {
   els.pedalboard = $('#pedalboard');
-  els.transportSelect = $('#transportSelect');
+  els.transportSelect = createDropdown($('#transportSelect'));
+  els.transportSelect.setOptions(
+    [{ value: 'bluetooth', label: 'Bluetooth' }, { value: 'usb', label: 'USB MIDI' }],
+    'bluetooth'
+  );
   els.connectBtn = $('#connectBtn');
   els.connLed = $('#connLed');
   els.connLabel = $('#connLabel');
@@ -366,7 +370,7 @@ function createDropdown(triggerEl) {
     const spaceAbove = rect.top - 12;
     const openUp = spaceBelow < 120 && spaceAbove > spaceBelow;
     menu.style.left = `${rect.left}px`;
-    menu.style.width = `${rect.width}px`;
+    menu.style.minWidth = `${rect.width}px`;
     menu.style.maxHeight = `${Math.max(Math.min(256, openUp ? spaceAbove : spaceBelow), 80)}px`;
     if (openUp) {
       menu.style.bottom = `${window.innerHeight - rect.top + 6}px`;

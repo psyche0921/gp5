@@ -514,7 +514,7 @@ select { font-family: inherit; }
   padding: 0.4rem;
 }
 .custom-select-option {
-  width: 100%; display: block; text-align: left;
+  width: 100%; display: block; text-align: left; white-space: nowrap;
   background: transparent; border: none; color: var(--text);
   padding: 0.65rem 0.7rem; border-radius: 8px; font-size: 1.05rem; font-weight: 700;
 }
