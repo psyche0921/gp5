@@ -30,6 +30,7 @@
       <svg viewBox="0 0 100 100"><path d="M20,40 A32,32 0 1 1 18,62" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round"/><path d="M18,16 L18,42 L44,42" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <button id="fullscreenBtn" class="icon-btn" title="전체화면"></button>
+    <button id="toneMakerBtn" class="log-toggle tone-toggle" title="자연어로 원하는 소리를 설명하면 프리셋을 만들어 드립니다">🎨 AI 톤메이커</button>
     <button id="midiLogToggle" class="log-toggle" title="Bluetooth/USB로 들어오는 신호를 원본 그대로 확인">신호 로그</button>
     <button id="consoleLogToggle" class="log-toggle" title="JavaScript 콘솔 메시지 확인 (디버깅용)">콘솔 로그</button>
   </div>
@@ -144,6 +145,32 @@
   </div>
   <div class="midi-log-body" id="consoleLogBody">
     <p class="midi-log-empty">JavaScript 콘솔 메시지가 여기에 나타납니다.</p>
+  </div>
+</div>
+
+<!-- Natural-language tone maker (separate full-screen page, entered from the topbar button) -->
+<div class="tone-screen" id="toneScreen">
+  <header class="tone-screen-head">
+    <button id="toneBackBtn" class="tone-back-btn" title="메인 화면으로">← 뒤로</button>
+    <h1>AI 톤메이커</h1>
+    <span class="tone-screen-spacer"></span>
+  </header>
+  <div class="tone-screen-body">
+    <p id="toneConnBanner" class="tone-conn-banner" hidden></p>
+    <p class="tone-intro">원하는 소리의 느낌을 문장으로 적어보세요. 장르, 아티스트나 곡 분위기, "리버브 살짝", "게인 강하게" 같은 세부 요청도 함께 알아듣습니다.</p>
+    <textarea id="toneInput" class="tone-input" rows="4" placeholder="예: 따뜻하고 빈티지한 블루스 톤, 리버브는 살짝만"></textarea>
+    <div class="tone-chips" id="toneChips"></div>
+    <button id="toneGenerateBtn" class="tone-generate-btn">✨ 프리셋 생성</button>
+
+    <div class="tone-result" id="toneResult" hidden>
+      <div class="tone-result-head">
+        <span class="tone-result-tag" id="toneResultTag"></span>
+        <p class="tone-result-desc" id="toneResultDesc"></p>
+      </div>
+      <div class="tone-result-blocks" id="toneResultBlocks"></div>
+      <p class="tone-apply-hint" id="toneApplyHint"></p>
+      <button id="toneApplyBtn" class="tone-apply-btn">🎛 GP5에 적용하기</button>
+    </div>
   </div>
 </div>
 

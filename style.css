@@ -657,6 +657,99 @@ select { font-family: inherit; }
 .save-modal-input:focus { outline: none; border-color: var(--accent-2); }
 .save-modal-confirm { align-self: stretch; padding: 0.8rem; font-size: 0.95rem; }
 
+/* ---------- AI tone maker (natural-language preset generator) ---------- */
+.tone-toggle { border-color: rgba(255,46,154,0.5); color: var(--accent); box-shadow: 0 0 12px rgba(255,46,154,0.2); }
+.tone-toggle:active { transform: scale(0.96); }
+
+.tone-screen {
+  position: fixed; inset: 0;
+  background: radial-gradient(1200px 700px at 15% -10%, #241a3a 0%, transparent 55%),
+              radial-gradient(1000px 600px at 110% 10%, #1a2f3a 0%, transparent 50%),
+              var(--bg-0);
+  z-index: 90;
+  display: flex; flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+}
+.tone-screen.show { transform: translateY(0); }
+
+.tone-screen-head {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 0.9rem 1.2rem;
+  background: linear-gradient(180deg, #171225, #0e0b18);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.tone-screen-head h1 {
+  flex: 1; margin: 0; font-size: 1.1rem; font-weight: 900; letter-spacing: 0.05em; text-align: center;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.tone-back-btn {
+  background: #0a0812; border: 1.5px solid #3a3550; color: var(--text-dim);
+  padding: 0.5rem 0.9rem; border-radius: 10px; font-weight: 800; font-size: 0.8rem;
+}
+.tone-screen-spacer { width: 4.6rem; flex: 0 0 auto; } /* balances the back button so the title stays centered */
+
+.tone-screen-body { flex: 1; overflow-y: auto; padding: 1.2rem 1.4rem 2rem; max-width: 44rem; margin: 0 auto; width: 100%; }
+
+.tone-conn-banner {
+  background: rgba(255,77,94,0.12); border: 1.5px solid var(--danger); color: var(--danger);
+  padding: 0.6rem 0.9rem; border-radius: 10px; font-size: 0.82rem; font-weight: 700; margin: 0 0 1rem;
+}
+
+.tone-intro { color: var(--text-dim); font-size: 0.88rem; line-height: 1.5; margin: 0 0 1rem; }
+
+.tone-input {
+  width: 100%; resize: vertical; min-height: 5rem;
+  background: #0a0812; border: 3px solid var(--line); color: var(--text);
+  padding: 0.9rem 1rem; border-radius: 12px; font-size: 1.05rem; font-family: inherit;
+}
+.tone-input:focus { outline: none; border-color: var(--accent-2); }
+
+.tone-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.9rem 0; }
+.tone-chip {
+  background: var(--panel-2); border: 1.5px solid var(--line); color: var(--text-dim);
+  padding: 0.45rem 0.8rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700;
+}
+.tone-chip:active { border-color: var(--accent-2); color: var(--accent-2); }
+
+.tone-generate-btn {
+  width: 100%; padding: 0.9rem; border-radius: 12px; border: none;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #0a0812;
+  font-weight: 900; font-size: 1rem; letter-spacing: 0.02em;
+  box-shadow: 0 8px 24px rgba(255,46,154,0.25);
+}
+.tone-generate-btn:active { transform: scale(0.98); }
+
+.tone-result { margin-top: 1.6rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }
+.tone-result-head { margin-bottom: 1rem; }
+.tone-result-tag {
+  display: inline-block; background: rgba(52,226,255,0.12); color: var(--accent-2);
+  padding: 0.3rem 0.8rem; border-radius: 999px; font-weight: 900; font-size: 0.85rem;
+}
+.tone-result-desc { color: var(--text); font-size: 0.92rem; line-height: 1.5; margin: 0.6rem 0 0; }
+
+.tone-result-blocks { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 0.8rem; }
+.tone-block-row {
+  display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.5rem 0.7rem; font-size: 0.82rem; opacity: 0.55;
+}
+.tone-block-row.on { opacity: 1; border-color: rgba(52,226,255,0.3); }
+.tone-block-name { font-weight: 900; color: var(--accent-2); min-width: 3em; }
+.tone-block-detail { font-weight: 700; }
+.tone-block-params { color: var(--text-dim); font-family: 'Consolas', monospace; font-size: 0.76rem; }
+
+.tone-apply-hint { color: var(--text-dim); font-size: 0.78rem; margin: 0 0 0.8rem; min-height: 1em; }
+
+.tone-apply-btn {
+  width: 100%; padding: 0.9rem; border-radius: 12px; border: none;
+  background: var(--ok); color: #06120c; font-weight: 900; font-size: 1rem;
+}
+.tone-apply-btn:active { transform: scale(0.98); }
+.tone-apply-btn:disabled { opacity: 0.5; }
+
 /* ---------- Narrow / portrait fallback ---------- */
 @media (max-width: 820px), (max-height: 480px) {
   .pedalboard { grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(2, 1fr); gap: 0.5rem; padding: 0.3rem 0.6rem 0.6rem; }

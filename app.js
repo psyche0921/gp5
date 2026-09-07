@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609071105';
+const BUILD_VERSION = '2609071254';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -157,6 +157,19 @@ function cacheEls() {
   els.consoleLogDownload = $('#consoleLogDownload');
   els.consoleLogClear = $('#consoleLogClear');
   els.consoleLogClose = $('#consoleLogClose');
+  els.toneMakerBtn = $('#toneMakerBtn');
+  els.toneScreen = $('#toneScreen');
+  els.toneBackBtn = $('#toneBackBtn');
+  els.toneConnBanner = $('#toneConnBanner');
+  els.toneInput = $('#toneInput');
+  els.toneChips = $('#toneChips');
+  els.toneGenerateBtn = $('#toneGenerateBtn');
+  els.toneResult = $('#toneResult');
+  els.toneResultTag = $('#toneResultTag');
+  els.toneResultDesc = $('#toneResultDesc');
+  els.toneResultBlocks = $('#toneResultBlocks');
+  els.toneApplyHint = $('#toneApplyHint');
+  els.toneApplyBtn = $('#toneApplyBtn');
 }
 
 function bindStaticEvents() {
@@ -211,6 +224,11 @@ function bindStaticEvents() {
     state.consoleLogs = [];
     els.consoleLogBody.innerHTML = '';
   });
+  els.toneMakerBtn.addEventListener('click', openToneScreen);
+  els.toneBackBtn.addEventListener('click', closeToneScreen);
+  els.toneGenerateBtn.addEventListener('click', onToneGenerateClick);
+  els.toneApplyBtn.addEventListener('click', onToneApplyClick);
+  buildToneChips();
 }
 
 const ICON_FS_ENTER = `<svg viewBox="0 0 100 100"><path d="M12,34 V12 H34 M66,12 H88 V34 M88,66 V88 H66 M34,88 H12 V66" fill="none" stroke="currentColor" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -832,6 +850,7 @@ function updateConnLed(connected, label) {
   els.rescanBtn.disabled = connected;
   showSpinner(false);
   setConnecting(false);
+  if (els.toneScreen.classList.contains('show')) refreshToneConnBanner();
 }
 
 /* ==================== USB MIDI handlers ==================== */
@@ -1577,6 +1596,482 @@ function floatToHexLE(value) {
 
 function clampMidi(v) { return Math.min(127, Math.max(0, Math.round(v))); }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/* ==================== AI tone maker (natural-language preset generator) ====================
+   Fully local/offline: no external LLM call. Free-form Korean/English text is scored against
+   a curated set of genre/mood archetypes (keyword hits), then a handful of regex-based
+   modifiers ("리버브 많이", "게인 낮게", ...) nudge specific block params on top of the base
+   recipe. The result is a plain { blockName -> { enabled, effect, params } } spec that is
+   applied through the same sendBlockToggle/sendBlockEffectChange/sendParamChange pipeline
+   the drawer already uses, so it only works over Bluetooth (parameter/effect edits are not
+   supported over the USB CC map) and can be saved afterward via the existing SAVE modal. */
+
+const TONE_ARCHETYPES = [
+  {
+    id: 'clean_bright', label: '청량한 클린',
+    keywords: ['클린', '청량', '맑은', '밝은', '크리스탈', 'clean', 'bright', 'sparkle', 'jangle', '쟁글'],
+    desc: '군더더기 없이 맑고 화사한 클린 톤. 아르페지오나 컴핑에 어울립니다.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 25 } },
+      pre: { enabled: false },
+      dst: { enabled: false },
+      amp: { enabled: true, effect: 'J-120 CL', params: { VOL: 55, Bass: 45, Middle: 50, Treble: 62, Bright: 1 } },
+      cab: { enabled: true, effect: 'J-120 2x12' },
+      eq: { enabled: false },
+      mod: { enabled: true, effect: 'A-Chorus', params: { Depth: 25, Rate: 2.0, Tone: 60 } },
+      dly: { enabled: true, effect: 'Pure', params: { Mix: 15, Time: 320, 'F.Back': 15, Trail: 0 } },
+      rvb: { enabled: true, effect: 'Hall', params: { Mix: 20, Decay: 35, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'warm_clean', label: '따뜻한 클린',
+    keywords: ['따뜻', '포근', '벨벳', '부드러운', 'mellow', 'warm', 'jazz', '재즈', 'soft clean'],
+    desc: '부드럽고 따뜻한 클린 톤. 재즈나 발라드 백킹에 어울립니다.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 20 } },
+      pre: { enabled: true, effect: 'COMP', params: { Sustain: 15, VOL: 55 } },
+      dst: { enabled: false },
+      amp: { enabled: true, effect: 'Match CL', params: { Gain: 20, PRES: 55, VOL: 55, Bass: 55, Middle: 55, Treble: 40 } },
+      cab: { enabled: true, effect: 'Bellman 2x12' },
+      eq: { enabled: false },
+      mod: { enabled: true, effect: 'B-Chorus', params: { Depth: 15, Rate: 1.5, VOL: 50 } },
+      dly: { enabled: false },
+      rvb: { enabled: true, effect: 'Room', params: { Mix: 25, Decay: 40, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'blues_crunch', label: '빈티지 블루스',
+    keywords: ['블루스', 'blues', '브레이크업', 'breakup', '빈티지 크런치', 'soulful', '텍사스'],
+    desc: '살짝 뭉개지는 빈티지 블루스 크런치. 픽 다이내믹에 반응하는 브레이크업 사운드.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 20 } },
+      pre: { enabled: false },
+      dst: { enabled: true, effect: 'Green OD', params: { Gain: 35, Tone: 65, VOL: 55 } },
+      amp: { enabled: true, effect: 'Tweedy', params: { Gain: 45, Tone: 55, VOL: 55 } },
+      cab: { enabled: true, effect: 'TWD CP 1x8' },
+      eq: { enabled: false },
+      mod: { enabled: false },
+      dly: { enabled: true, effect: 'Analog', params: { Mix: 18, Time: 380, Feedback: 18, Trail: 0 } },
+      rvb: { enabled: true, effect: 'Spring', params: { Mix: 28, Decay: 35, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'classic_rock', label: '클래식 록',
+    keywords: ['클래식록', 'classic rock', '70s', '록', 'rock', '레드제플린', '지미핸드릭스'],
+    desc: '70년대 클래식 록 사운드. 적당히 밀어붙이는 오버드라이브와 미드레인지 강조 톤.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 25 } },
+      pre: { enabled: false },
+      dst: { enabled: true, effect: 'Super OD', params: { Gain: 55, Tone: 55, VOL: 55 } },
+      amp: { enabled: true, effect: 'L-Star CL', params: { Gain: 55, PRES: 60, VOL: 55, Bass: 50, Middle: 55, Treble: 55 } },
+      cab: { enabled: true, effect: 'UK GRN 2x12' },
+      eq: { enabled: false },
+      mod: { enabled: false },
+      dly: { enabled: true, effect: 'Analog', params: { Mix: 15, Time: 400, Feedback: 20, Trail: 0 } },
+      rvb: { enabled: true, effect: 'Plate', params: { Mix: 22, Decay: 30, Damp: 40, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'hard_rock', label: '하드 록',
+    keywords: ['하드록', 'hard rock', '80s', '아레나', '헤비록', '파워풀'],
+    desc: '80년대 하드록 스타일의 두꺼운 리프 톤. 하이게인 오버드라이브와 강조된 미드로 파워풀하게.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 35 } },
+      pre: { enabled: false },
+      dst: { enabled: true, effect: 'SM Dist', params: { Gain: 65, Tone: 55, VOL: 55 } },
+      amp: { enabled: true, effect: 'UK 45', params: { Gain: 60, PRES: 55, VOL: 55, Bass: 55, Middle: 60, Treble: 55 } },
+      cab: { enabled: true, effect: 'UK GRN 4x12' },
+      eq: { enabled: false },
+      mod: { enabled: false },
+      dly: { enabled: false },
+      rvb: { enabled: true, effect: 'Room', params: { Mix: 15, Decay: 25, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'modern_metal', label: '모던 메탈',
+    keywords: ['메탈', 'metal', '헤비', '다운튠', 'djent', '브루탈', 'brutal', '코어', '극한게인', '스래시'],
+    desc: '타이트한 게이트와 극강의 게인으로 다진 모던 메탈 톤.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 55 } },
+      pre: { enabled: false },
+      dst: { enabled: true, effect: 'Darktale', params: { Gain: 75, Filter: 55, VOL: 55 } },
+      amp: { enabled: true, effect: 'Mess DualV', params: { Gain: 70, PRES: 50, VOL: 55, Bass: 60, Middle: 35, Treble: 55 } },
+      cab: { enabled: true, effect: 'Mess 4x12' },
+      eq: { enabled: true, effect: 'Guitar EQ 2', params: { '100Hz': 10, '500Hz': -5, '1kHz': -10, '3kHz': 4, '6kHz': 6, VOL: 55 } },
+      mod: { enabled: false },
+      dly: { enabled: false },
+      rvb: { enabled: false },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'ambient_shoegaze', label: '몽환적인 슈게이징',
+    keywords: ['앰비언트', 'ambient', '슈게이징', 'shoegaze', '드림팝', 'dream pop', '몽환', '아득', '우주'],
+    desc: '두터운 리버브와 딜레이로 감싸는 몽환적인 슈게이징/앰비언트 톤.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 15 } },
+      pre: { enabled: false },
+      dst: { enabled: true, effect: 'Sora Fuzz', params: { Fuzz: 35, VOL: 45 } },
+      amp: { enabled: true, effect: 'Dark Twin', params: { Gain: 40, VOL: 50, Bass: 55, Middle: 40, Treble: 55, Bright: 1 } },
+      cab: { enabled: true, effect: 'Dark Twin 2x12' },
+      eq: { enabled: false },
+      mod: { enabled: true, effect: 'N-Jet', params: { Depth: 45, Rate: 0.6, 'P.Delay': 55, 'F.Back': 45 } },
+      dly: { enabled: true, effect: 'Tape', params: { Mix: 45, Time: 550, 'F.Back': 45, Trail: 1 } },
+      rvb: { enabled: true, effect: 'Church', params: { Mix: 55, Decay: 75, Trail: 1 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'funk_clean', label: '훵키 클린',
+    keywords: ['훵키', 'funk', 'groove', '그루브', '치킨피킹', '컷팅'],
+    desc: '탄탄한 컴프와 챙챙거리는 커팅감의 훵키 클린 톤.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 20 } },
+      pre: { enabled: true, effect: 'COMP', params: { Sustain: 30, VOL: 55 } },
+      dst: { enabled: false },
+      amp: { enabled: true, effect: 'J-120 CL', params: { VOL: 55, Bass: 45, Middle: 55, Treble: 60, Bright: 1 } },
+      cab: { enabled: true, effect: 'J-120 2x12' },
+      eq: { enabled: false },
+      mod: { enabled: true, effect: 'B-Chorus', params: { Depth: 15, Rate: 3.0, VOL: 50 } },
+      dly: { enabled: true, effect: 'Slapback', params: { Mix: 12, Time: 90, 'F.Back': 10, Trail: 0 } },
+      rvb: { enabled: true, effect: 'Room', params: { Mix: 15, Decay: 20, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'acoustic_sim', label: '어쿠스틱 시뮬레이션',
+    keywords: ['어쿠스틱', 'acoustic', '통기타', '언플러그드', 'unplugged'],
+    desc: '어쿠스틱 기타 느낌을 살린 톤. 앰프 시뮬레이터로 통기타 특유의 울림을 표현합니다.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 15 } },
+      pre: { enabled: true, effect: 'COMP', params: { Sustain: 25, VOL: 55 } },
+      dst: { enabled: false },
+      amp: { enabled: true, effect: 'AC Pre1', params: { Volume: 55, Tone: 55, Balance: 50, 'EQ Freq': 50, 'EQ Q': 50, 'EQ Gain': 55 } },
+      cab: { enabled: false },
+      eq: { enabled: false },
+      mod: { enabled: false },
+      dly: { enabled: true, effect: 'Pure', params: { Mix: 12, Time: 300, 'F.Back': 10, Trail: 0 } },
+      rvb: { enabled: true, effect: 'Room', params: { Mix: 30, Decay: 45, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'lofi_vintage', label: '로파이 빈티지',
+    keywords: ['로파이', 'lo-fi', 'lofi', '빈티지 테이프', '테이프 딜레이', '올드스쿨', '노스탤지어', 'nostalgia'],
+    desc: '테이프 딜레이와 어두운 톤으로 빚어낸 로파이/빈티지 감성.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 20 } },
+      pre: { enabled: false },
+      dst: { enabled: true, effect: 'Green OD', params: { Gain: 20, Tone: 40, VOL: 50 } },
+      amp: { enabled: true, effect: 'Bellman 59B', params: { Gain: 30, PRES: 40, VOL: 50, Bass: 55, Middle: 50, Treble: 35 } },
+      cab: { enabled: true, effect: 'Bellman 2x12' },
+      eq: { enabled: false },
+      mod: { enabled: false },
+      dly: { enabled: true, effect: 'Tape', params: { Mix: 35, Time: 420, 'F.Back': 40, Trail: 1 } },
+      rvb: { enabled: true, effect: 'Spring', params: { Mix: 25, Decay: 35, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'punk_raw', label: '펑크 록',
+    keywords: ['펑크록', 'punk rock', 'punk', '하드코어', '개러지', 'garage', '펑크'],
+    desc: '거칠고 다이렉트한 펑크록 디스토션. 군더더기 없이 직진하는 사운드.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 30 } },
+      pre: { enabled: false },
+      dst: { enabled: true, effect: 'Plustortion', params: { Gain: 70, VOL: 55 } },
+      amp: { enabled: true, effect: 'UK 45', params: { Gain: 60, PRES: 50, VOL: 55, Bass: 50, Middle: 50, Treble: 60 } },
+      cab: { enabled: true, effect: 'UK GRN 4x12' },
+      eq: { enabled: false },
+      mod: { enabled: false },
+      dly: { enabled: false },
+      rvb: { enabled: false },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'country_twang', label: '컨트리 트웽',
+    keywords: ['컨트리', 'country', '트웽', 'twang', '내슈빌', '텔레캐스터'],
+    desc: '쨍하고 탄력있는 컨트리 트웽 톤.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 20 } },
+      pre: { enabled: true, effect: 'COMP4', params: { Sustain: 25, Attack: 65, VOL: 55, Clip: 5 } },
+      dst: { enabled: false },
+      amp: { enabled: true, effect: 'Foxy 30N', params: { Gain: 30, 'Tone Cut': 45, VOL: 55, Bright: 1 } },
+      cab: { enabled: true, effect: 'Foxy 1x12' },
+      eq: { enabled: false },
+      mod: { enabled: false },
+      dly: { enabled: true, effect: 'Slapback', params: { Mix: 15, Time: 120, 'F.Back': 15, Trail: 0 } },
+      rvb: { enabled: true, effect: 'Spring', params: { Mix: 22, Decay: 30, Trail: 0 } },
+      ns: { enabled: false },
+    },
+  },
+  {
+    id: 'ballad_reverb', label: '감성 발라드',
+    keywords: ['발라드', 'ballad', '서정적', '잔잔한', '감성', 'emotional', '이별', '눈물'],
+    desc: '길게 울리는 리버브로 감정을 담아내는 발라드 클린 톤.',
+    blocks: {
+      nr: { enabled: true, params: { THRE: 15 } },
+      pre: { enabled: false },
+      dst: { enabled: false },
+      amp: { enabled: true, effect: 'Match CL', params: { Gain: 22, PRES: 60, VOL: 55, Bass: 50, Middle: 50, Treble: 55 } },
+      cab: { enabled: true, effect: 'Bellman 2x12' },
+      eq: { enabled: false },
+      mod: { enabled: true, effect: 'A-Chorus', params: { Depth: 20, Rate: 1.2, Tone: 55 } },
+      dly: { enabled: true, effect: 'Sweet Echo', params: { Mix: 25, Time: 450, 'F.Back': 25, Trail: 1 } },
+      rvb: { enabled: true, effect: 'Hall', params: { Mix: 40, Decay: 60, Trail: 1 } },
+      ns: { enabled: false },
+    },
+  },
+];
+
+const TONE_CHIP_EXAMPLES = [
+  '따뜻한 빈티지 블루스, 리버브는 살짝만',
+  '80년대 하드록 리프 톤, 게인 강하게',
+  '몽환적인 슈게이징, 리버브 풍성하게',
+  '어쿠스틱 통기타 느낌',
+  '타이트한 모던 메탈',
+  '재즈 느낌의 부드러운 클린',
+];
+
+// Looks up a param's { min, max } for clamping, following the same block/effect/parameter
+// shape the drawer itself reads (block.effects[x].parameters, or block.parameters for
+// effect-less blocks like ns).
+function findToneParamDef(blockName, effectName, paramName) {
+  const block = state.config.blocks.find((b) => b.name === blockName);
+  if (!block) return null;
+  const effects = block.effects || {};
+  const effData = effectName
+    ? Object.values(effects).find((e) => e.name === effectName)
+    : Object.values(effects)[0]; // single-effect blocks like nr's Gate
+  const params = effData?.parameters || block.parameters || [];
+  return params.find((p) => p.name === paramName) || null;
+}
+
+function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+
+// Nudges one param on one block (if that block is enabled in the recipe) by a delta,
+// clamped to the real device range for whichever effect the recipe picked.
+function adjustToneParam(blocks, blockName, paramName, delta) {
+  const rb = blocks[blockName];
+  if (!rb || rb.enabled === false) return;
+  const def = findToneParamDef(blockName, rb.effect, paramName);
+  if (!def) return;
+  const current = rb.params?.[paramName] ?? def.default;
+  rb.params = rb.params || {};
+  rb.params[paramName] = clamp(current + delta, def.min, def.max);
+}
+
+function scaleToneParam(blocks, blockName, paramName, factor) {
+  const rb = blocks[blockName];
+  if (!rb || rb.enabled === false) return;
+  const def = findToneParamDef(blockName, rb.effect, paramName);
+  if (!def) return;
+  const current = rb.params?.[paramName] ?? def.default;
+  rb.params = rb.params || {};
+  rb.params[paramName] = clamp(Math.round(current * factor), def.min, def.max);
+}
+
+// Small, deliberately conservative set of fine-tuning phrases layered on top of whichever
+// archetype matched — enough to cover "리버브 많이", "게인 낮게" style requests without
+// trying to be a full parser.
+const TONE_MODIFIERS = [
+  { label: '리버브 강조', test: /리버브.*?(많이|진하게|크게|풍성)|more reverb|drench/, apply: (b) => { adjustToneParam(b, 'rvb', 'Mix', 20); adjustToneParam(b, 'rvb', 'Decay', 15); } },
+  { label: '리버브 줄임', test: /리버브.*?(적게|약하게|살짝만|줄여|은은)/, apply: (b) => { adjustToneParam(b, 'rvb', 'Mix', -15); adjustToneParam(b, 'rvb', 'Decay', -10); } },
+  { label: '딜레이 길게', test: /딜레이.*?(길게|넉넉)|long delay/, apply: (b) => scaleToneParam(b, 'dly', 'Time', 1.4) },
+  { label: '딜레이 짧게', test: /딜레이.*?(짧게|타이트)|short delay|tight delay/, apply: (b) => scaleToneParam(b, 'dly', 'Time', 0.6) },
+  { label: '게인 강조', test: /게인.*?(높게|세게|강하게)|드라이브.*?(강하게|세게)|more gain|more drive/, apply: (b) => { adjustToneParam(b, 'dst', 'Gain', 15); adjustToneParam(b, 'amp', 'Gain', 15); } },
+  { label: '게인 낮춤', test: /게인.*?(낮게|약하게)|드라이브.*?(약하게)|less gain/, apply: (b) => { adjustToneParam(b, 'dst', 'Gain', -15); adjustToneParam(b, 'amp', 'Gain', -15); } },
+  { label: '디스토션 제거', test: /디스토션.*?(빼|없이|off)|no distortion|clean only|클린하게/, apply: (b) => { if (b.dst) b.dst.enabled = false; } },
+  { label: '베이스 강조', test: /베이스.*?(부스트|강조|두껍게)|more bass/, apply: (b) => adjustToneParam(b, 'amp', 'Bass', 15) },
+  { label: '트레블 강조', test: /트레블.*?(부스트|강조|밝게)|more treble|brighter/, apply: (b) => adjustToneParam(b, 'amp', 'Treble', 15) },
+  { label: '미드 스쿱', test: /미드.*?(스쿱|빼|줄여)|mid scoop|scooped mid/, apply: (b) => adjustToneParam(b, 'amp', 'Middle', -20) },
+];
+
+// Purely local keyword scoring, no network call: every archetype's keyword list is tested
+// as a substring of the (lowercased) input, longer/more specific keywords counting for more
+// so e.g. "블루스" outweighs a stray one-off match. Falls back to Classic Rock (with a
+// `fallback: true` flag the UI surfaces) when nothing scores above zero.
+function generateTonePreset(rawText) {
+  const text = (rawText || '').trim();
+  if (!text) return null;
+  const lc = text.toLowerCase();
+
+  let best = null, bestScore = 0, bestKeywords = [];
+  TONE_ARCHETYPES.forEach((arch) => {
+    let score = 0;
+    const hits = [];
+    arch.keywords.forEach((kw) => {
+      if (lc.includes(kw.toLowerCase())) {
+        score += kw.length >= 3 ? 2 : 1;
+        hits.push(kw);
+      }
+    });
+    if (score > bestScore) {
+      bestScore = score;
+      best = arch;
+      bestKeywords = hits;
+    }
+  });
+
+  const fallback = bestScore === 0;
+  const archetype = best || TONE_ARCHETYPES.find((a) => a.id === 'classic_rock');
+  const blocks = JSON.parse(JSON.stringify(archetype.blocks));
+  const appliedModifiers = [];
+  TONE_MODIFIERS.forEach((mod) => {
+    if (mod.test.test(lc)) {
+      mod.apply(blocks);
+      appliedModifiers.push(mod.label);
+    }
+  });
+
+  return { archetype, blocks, matchedKeywords: bestKeywords, fallback, appliedModifiers };
+}
+
+function formatToneParamValue(v) {
+  return typeof v === 'number' ? (Number.isInteger(v) ? String(v) : v.toFixed(1)) : String(v);
+}
+
+function renderToneResult(result) {
+  const { archetype, blocks, matchedKeywords, fallback, appliedModifiers } = result;
+  els.toneResultTag.textContent = archetype.label;
+  els.toneResultDesc.textContent = archetype.desc + (fallback
+    ? ' (특정 장르 키워드를 찾지 못해 기본 톤을 적용했어요. 장르나 아티스트, 분위기를 조금 더 구체적으로 적어보면 더 정확해져요.)'
+    : '');
+
+  els.toneResultBlocks.innerHTML = '';
+  BLOCK_ORDER.forEach((name) => {
+    const block = state.config.blocks.find((b) => b.name === name);
+    const rb = blocks[name];
+    const isOn = !!rb?.enabled;
+    const paramsText = rb?.params
+      ? Object.entries(rb.params).map(([k, v]) => `${k} ${formatToneParamValue(v)}`).join(', ')
+      : '';
+    const row = document.createElement('div');
+    row.className = 'tone-block-row' + (isOn ? ' on' : '');
+    row.innerHTML = `
+      <span class="tone-block-name">${SHORT_LABEL[name] || name.toUpperCase()}</span>
+      <span class="tone-block-detail">${isOn ? escapeHtml(rb.effect || block?.label || 'ON') : 'OFF'}</span>
+      ${paramsText ? `<span class="tone-block-params">${escapeHtml(paramsText)}</span>` : ''}
+    `;
+    els.toneResultBlocks.appendChild(row);
+  });
+
+  const hintParts = [];
+  if (matchedKeywords.length) hintParts.push(`인식된 키워드: ${matchedKeywords.join(', ')}`);
+  if (appliedModifiers.length) hintParts.push(`세부 조정: ${appliedModifiers.join(', ')}`);
+  els.toneApplyHint.textContent = hintParts.join(' · ');
+
+  els.toneResult.hidden = false;
+  els.toneApplyBtn.disabled = state.transport !== 'bluetooth' || !state.connected;
+  state.pendingTonePreset = blocks;
+}
+
+function onToneGenerateClick() {
+  const result = generateTonePreset(els.toneInput.value);
+  if (!result) {
+    showToast('원하는 톤을 먼저 입력해주세요', true);
+    return;
+  }
+  renderToneResult(result);
+}
+
+async function onToneApplyClick() {
+  if (!state.pendingTonePreset) return;
+  await applyTonePresetToDevice(state.pendingTonePreset);
+}
+
+// Applies a generated recipe through the exact same commands the drawer uses (toggle,
+// effect-change, param-change), so it inherits the existing settle-time handling — only
+// difference is we're doing it for every block in one sweep instead of one knob at a time.
+async function applyTonePresetToDevice(blocksSpec) {
+  if (state.transport !== 'bluetooth' || !state.bleChar) {
+    showToast('AI 톤메이커는 Bluetooth 연결 상태에서만 적용할 수 있습니다', true);
+    return false;
+  }
+  els.toneApplyBtn.disabled = true;
+  setConnecting(true, 'GP5에 프리셋 적용하는 중...');
+  try {
+    for (const name of BLOCK_ORDER) {
+      const rb = blocksSpec[name];
+      const block = state.config.blocks.find((b) => b.name === name);
+      if (!rb || !block) continue;
+
+      sendBlockToggle(block, !!rb.enabled);
+      if (!rb.enabled) { await sleep(60); continue; }
+
+      let effData = null;
+      if (rb.effect && block.effects) {
+        const entry = Object.entries(block.effects).find(([, eff]) => eff.name === rb.effect);
+        if (entry) {
+          const [effHex, eff] = entry;
+          const bState = state.blocks[name] || {};
+          if (bState.effectId !== effHex) sendBlockEffectChange(block, effHex);
+          effData = eff;
+        }
+      }
+
+      const paramDefs = effData?.parameters || block.parameters || [];
+      if (rb.params) {
+        for (const [paramName, value] of Object.entries(rb.params)) {
+          const paramDef = paramDefs.find((p) => p.name === paramName);
+          if (!paramDef) continue;
+          await sendParamChange(block, paramDef.index, value);
+        }
+      }
+      await sleep(60);
+    }
+    showToast('프리셋을 GP5에 적용했습니다. 마음에 들면 SAVE로 저장하세요.');
+    setStatus('AI 톤메이커 프리셋 적용 완료');
+    return true;
+  } catch (err) {
+    showToast('프리셋 적용 중 오류: ' + err.message, true);
+    return false;
+  } finally {
+    setConnecting(false);
+    els.toneApplyBtn.disabled = state.transport !== 'bluetooth' || !state.connected;
+  }
+}
+
+function buildToneChips() {
+  els.toneChips.innerHTML = '';
+  TONE_CHIP_EXAMPLES.forEach((phrase) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'tone-chip';
+    chip.textContent = phrase;
+    chip.addEventListener('click', () => {
+      els.toneInput.value = phrase;
+      renderToneResult(generateTonePreset(phrase));
+    });
+    els.toneChips.appendChild(chip);
+  });
+}
+
+function refreshToneConnBanner() {
+  const ok = state.transport === 'bluetooth' && state.connected;
+  els.toneConnBanner.hidden = ok;
+  if (!ok) {
+    els.toneConnBanner.textContent = state.connected
+      ? '⚠ USB 연결에서는 효과/파라미터를 바꿀 수 없습니다. 프리셋 미리보기만 가능해요 — 적용하려면 Bluetooth로 연결하세요.'
+      : '⚠ 아직 GP5에 연결되지 않았습니다. 프리셋 미리보기는 가능하지만, 적용하려면 먼저 Bluetooth로 연결하세요.';
+  }
+  if (els.toneApplyBtn) els.toneApplyBtn.disabled = !ok || !state.pendingTonePreset;
+}
+
+function openToneScreen() {
+  refreshToneConnBanner();
+  els.toneScreen.classList.add('show');
+}
+
+function closeToneScreen() {
+  els.toneScreen.classList.remove('show');
+}
 
 /* ==================== Status bar ==================== */
 
