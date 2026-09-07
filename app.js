@@ -7,7 +7,7 @@
    ============================================================ */
 
 // Bumped by hand on each deploy — yymmddHHMM of when this build was pushed.
-const BUILD_VERSION = '2609071048';
+const BUILD_VERSION = '2609071105';
 
 const BLOCK_ORDER = ['nr', 'pre', 'dst', 'amp', 'cab', 'eq', 'mod', 'dly', 'rvb', 'ns'];
 const BLOCK_HUE = { nr: 190, pre: 45, dst: 8, amp: 26, cab: 268, eq: 206, mod: 320, dly: 150, rvb: 118, ns: 255 };
@@ -1133,6 +1133,32 @@ function patchTotal() {
   return state.transport === 'bluetooth' ? Math.max(state.patchNames.length, 1) : 100;
 }
 
+let stopTrackingSaveModalViewport = () => {};
+
+// Keeps a fixed-position, vertically-centered modal above the on-screen keyboard.
+// `interactive-widget=resizes-content` (viewport meta) already handles this on newer
+// Chrome/WebView by shrinking the layout viewport itself, but on older Android WebView
+// that's ignored and a fixed `top: 50%` modal ends up centered on the FULL screen height
+// -- i.e. partly hidden behind the keyboard. visualViewport always reports the actually
+// visible area regardless of that support, so re-centering against it works everywhere.
+function trackVisualViewport(modalEl) {
+  const vv = window.visualViewport;
+  if (!vv) return () => {};
+  const update = () => {
+    modalEl.style.top = `${vv.offsetTop + vv.height / 2}px`;
+    modalEl.style.maxHeight = `${vv.height * 0.9}px`;
+  };
+  update();
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll', update);
+  return () => {
+    vv.removeEventListener('resize', update);
+    vv.removeEventListener('scroll', update);
+    modalEl.style.top = '';
+    modalEl.style.maxHeight = '';
+  };
+}
+
 // Valeton Suite lets you save the current live edits to any patch slot under any name
 // (not just overwrite the active one), and jumps you to that slot afterward. Pre-fill
 // the modal with the active patch's number/name so a plain confirm behaves like the
@@ -1144,6 +1170,7 @@ function openSaveModal() {
   els.saveModalName.value = state.patchNames[state.currentPatch] || '';
   els.saveModal.classList.add('show');
   els.scrim.classList.add('show');
+  stopTrackingSaveModalViewport = trackVisualViewport(els.saveModal);
   els.saveModalName.focus();
   els.saveModalName.select();
 }
@@ -1151,6 +1178,8 @@ function openSaveModal() {
 function closeSaveModal() {
   els.saveModal.classList.remove('show');
   els.scrim.classList.remove('show');
+  stopTrackingSaveModalViewport();
+  stopTrackingSaveModalViewport = () => {};
 }
 
 // Commits the current live edits to a patch slot on GP5. There's no documented SysEx
